@@ -8,6 +8,7 @@ from typing import (
 from fastapi import HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.pool import QueuePool
+from sqlalchemy import text
 from sqlmodel import (
     Session,
     SQLModel,
@@ -57,6 +58,11 @@ class DatabaseService:
                 pool_timeout=30,  # Connection timeout (seconds)
                 pool_recycle=1800,  # Recycle connections after 30 minutes
             )
+
+            # Enable pgvector extension (required for vector embeddings)
+            with self.engine.connect() as conn:
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                conn.commit()
 
             # Create tables (only if they don't exist)
             SQLModel.metadata.create_all(self.engine)

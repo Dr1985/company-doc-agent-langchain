@@ -1,0 +1,6 @@
+用langchain+langgraph+langfuse，
+调用deepseek v4 flash和qwen embedding，
+用mimo作文件储存
+用postgre的pgvector作向量数据库
+前端可以用vue
+后端可以用python的fastapi
