@@ -20,6 +20,10 @@ from src.config.settings import (
     settings,
 )
 from src.system.logs import logger
+from src.data.models.document import (
+    Document,
+    DocumentChunk,
+)
 from src.data.models.session import Session as ChatSession
 from src.data.models.user import User
 

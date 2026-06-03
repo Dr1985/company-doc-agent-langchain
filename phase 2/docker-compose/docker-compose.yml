@@ -1,0 +1,123 @@
+version: '3.8'
+
+# =============================================================================
+# Phase 2: 文档入库流水线 — Docker Compose
+# =============================================================================
+# 启动命令: docker compose -f "phase 2/docker-compose/docker-compose.yml" up -d
+#
+# 包含服务:
+#   db         — PostgreSQL 16 + pgvector (向量存储 + 业务数据)
+#   minio      — S3 兼容对象存储 (原始文档文件)
+#   prometheus — 系统指标采集
+#   grafana    — 指标可视化面板
+#   cadvisor   — 容器资源监控
+#
+# 注意: FastAPI App 不在本文件中，开发时通过 uvicorn 本地启动
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 16 + pgvector — 向量存储
+  # ---------------------------------------------------------------------------
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-mydb}
+      - POSTGRES_USER=${POSTGRES_USER:-myuser}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-mypassword}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-myuser} -d ${POSTGRES_DB:-mydb}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+    networks:
+      - monitoring
+
+  # ---------------------------------------------------------------------------
+  # MinIO — S3 兼容对象存储 (替代设计文档中的 RustFS)
+  # 用于存放用户上传的原始文档 (PDF/Word/MD 等)
+  # ---------------------------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"   # S3 API 端口 (程序调用)
+      - "9001:9001"   # Web 控制台端口 (浏览器访问 http://localhost:9001)
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: always
+    networks:
+      - monitoring
+
+  # ---------------------------------------------------------------------------
+  # Prometheus — 指标采集
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    networks:
+      - monitoring
+    restart: always
+
+  # ---------------------------------------------------------------------------
+  # Grafana — 指标可视化
+  # ---------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ../../grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ../../grafana/dashboards/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    networks:
+      - monitoring
+    restart: always
+
+  # ---------------------------------------------------------------------------
+  # cAdvisor — 容器资源监控
+  # ---------------------------------------------------------------------------
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - monitoring
+    restart: always
+
+
+networks:
+  monitoring:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  grafana-storage:
+  minio-data:

@@ -444,6 +444,28 @@ class Settings:
             self.LONG_TERM_MEMORY_AVAILABLE,
             self.LONG_TERM_MEMORY_DISABLED_REASON,
         ) = self._resolve_long_term_memory_state()
+        # Qwen Embedding Configuration
+        self.QWEN_EMBEDDING_API_KEY = os.getenv("QWEN_EMBEDDING_API_KEY", "").strip()
+        self.QWEN_EMBEDDING_BASE_URL = os.getenv(
+            "QWEN_EMBEDDING_BASE_URL",
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        ).strip()
+        self.QWEN_EMBEDDING_MODEL = os.getenv("QWEN_EMBEDDING_MODEL", "text-embedding-v4").strip()
+        self.QWEN_EMBEDDING_DIMS = int(os.getenv("QWEN_EMBEDDING_DIMS", "1024"))
+        self.QWEN_EMBEDDING_AVAILABLE = bool(self.QWEN_EMBEDDING_API_KEY)
+
+        # MinIO / S3 Configuration
+        self.MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000").strip()
+        self.MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin").strip()
+        self.MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin").strip()
+        self.MINIO_BUCKET = os.getenv("MINIO_BUCKET", "documents").strip()
+        self.MINIO_SECURE = parse_bool_from_env("MINIO_USE_SSL", False)
+
+        # Ingestion Configuration
+        self.INGESTION_CHUNK_SIZE = int(os.getenv("INGESTION_CHUNK_SIZE", "512"))
+        self.INGESTION_CHUNK_OVERLAP = int(os.getenv("INGESTION_CHUNK_OVERLAP", "128"))
+        self.MAX_UPLOAD_SIZE = int(os.getenv("MAX_UPLOAD_SIZE", str(50 * 1024 * 1024)))  # 50 MB
+
         # JWT Configuration
         self.JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "")
         self.JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
