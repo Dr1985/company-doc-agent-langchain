@@ -112,18 +112,18 @@ def validate_password_strength(password: str) -> bool:
         ValueError: If the password is not strong enough with reason
     """
     if len(password) < 8:
-        raise ValueError("Password must be at least 8 characters long")
+        raise ValueError("密码长度不能少于 8 个字符")
 
     if not re.search(r"[A-Z]", password):
-        raise ValueError("Password must contain at least one uppercase letter")
+        raise ValueError("密码必须包含至少一个大写字母")
 
     if not re.search(r"[a-z]", password):
-        raise ValueError("Password must contain at least one lowercase letter")
+        raise ValueError("密码必须包含至少一个小写字母")
 
     if not re.search(r"[0-9]", password):
-        raise ValueError("Password must contain at least one number")
+        raise ValueError("密码必须包含至少一个数字")
 
     if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
-        raise ValueError("Password must contain at least one special character")
+        raise ValueError("密码必须包含至少一个特殊字符")
 
     return True

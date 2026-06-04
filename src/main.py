@@ -120,15 +120,38 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         errors=str(exc.errors()),
     )
 
-    # Format the errors to be more user-friendly
-    formatted_errors = []
+    # Build user-friendly Chinese error messages
+    error_messages = []
     for error in exc.errors():
-        loc = " -> ".join([str(loc_part) for loc_part in error["loc"] if loc_part != "body"])
-        formatted_errors.append({"field": loc, "message": error["msg"]})
+        field = " -> ".join([str(loc_part) for loc_part in error["loc"] if loc_part != "body"])
+        msg = error.get("msg", "")
+        error_type = error.get("type", "")
+
+        # Translate common Pydantic validation errors to Chinese
+        if error_type == "string_too_short":
+            ctx = error.get("ctx", {})
+            min_len = ctx.get("min_length", "?")
+            error_messages.append(f"「{field}」长度不能少于 {min_len} 个字符")
+        elif error_type == "string_too_long":
+            ctx = error.get("ctx", {})
+            max_len = ctx.get("max_length", "?")
+            error_messages.append(f"「{field}」长度不能超过 {max_len} 个字符")
+        elif error_type == "value_error.email":
+            error_messages.append("邮箱格式不正确，请输入有效的邮箱地址")
+        elif error_type == "missing":
+            error_messages.append(f"「{field}」为必填项")
+        elif error_type == "value_error":
+            # Pydantic field_validator errors - use the raw message
+            raw_msg = msg.replace("Value error, ", "")
+            error_messages.append(raw_msg)
+        else:
+            error_messages.append(f"「{field}」{msg}")
+
+    detail = "；".join(error_messages) if error_messages else "请求数据格式不正确"
 
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={"detail": "Validation error", "errors": formatted_errors},
+        content={"detail": detail},
     )
 
 
