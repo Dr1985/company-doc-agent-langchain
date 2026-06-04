@@ -41,15 +41,32 @@ def load_interaction_module(monkeypatch, stream_chunks):
     fake_auth_module.get_current_session = lambda: None
 
     fake_settings_module = types.ModuleType("src.config.settings")
+    # Environment must work both as an enum (Environment.PRODUCTION) and a value holder
+    _env_test = types.SimpleNamespace(value="test")
+    fake_settings_module.Environment = types.SimpleNamespace(
+        DEVELOPMENT="development", PRODUCTION="production",
+        STAGING="staging", TEST="test",
+    )
+    fake_settings_module.LLMProvider = types.SimpleNamespace(
+        AUTO="auto", OPENAI="openai", DEEPSEEK="deepseek", OPENROUTER="openrouter",
+    )
     fake_settings_module.settings = types.SimpleNamespace(
         RATE_LIMIT_ENDPOINTS={
             "chat": ["10/minute"],
             "chat_stream": ["10/minute"],
             "messages": ["10/minute"],
         },
-        ENVIRONMENT=types.SimpleNamespace(value="test"),
+        ENVIRONMENT=_env_test,
         ACTIVE_LLM_PROVIDER=types.SimpleNamespace(value="deepseek"),
         DEFAULT_LLM_MODEL="deepseek-chat",
+        REDIS_HOST="localhost",
+        REDIS_PORT=6379,
+        REDIS_PASSWORD="",
+        REDIS_CACHE_TTL=86400,
+        REDIS_CACHE_SIMILARITY_THRESHOLD=0.95,
+        QWEN_EMBEDDING_API_KEY="",
+        LONG_TERM_MEMORY_AVAILABLE=False,
+        LANGFUSE_CONFIGURED=False,
     )
 
     fake_workflow_module = types.ModuleType("src.agent.workflow")
@@ -66,11 +83,11 @@ def load_interaction_module(monkeypatch, stream_chunks):
         def __init__(self):
             self.llm_service = FakeLLMService()
 
-        async def get_stream_response(self, messages, session_id, user_id=None, document_ids=None):
+        async def get_stream_response(self, messages, session_id, user_id=None, document_ids=None, model=None):
             for chunk in stream_chunks:
                 yield chunk
 
-        async def get_response(self, messages, session_id, user_id=None, document_ids=None):
+        async def get_response(self, messages, session_id, user_id=None, document_ids=None, model=None):
             return {"messages": [], "sources": []}
 
         async def clear_chat_history(self, session_id):
@@ -117,6 +134,13 @@ def load_interaction_module(monkeypatch, stream_chunks):
 
     fake_session_module.Session = Session
 
+    fake_llm_registry_module = types.ModuleType("src.services.llm_provider")
+    fake_llm_registry_module.LLMRegistry = type("FakeLLMRegistry", (), {
+        "list_models": classmethod(lambda cls: [{"name": "deepseek-chat", "provider": "deepseek"}]),
+        "get_all_names": classmethod(lambda cls: ["deepseek-chat"]),
+    })()
+    monkeypatch.setitem(sys.modules, "src.services.llm_provider", fake_llm_registry_module)
+
     reset_modules()
     monkeypatch.setitem(sys.modules, "src.interface.auth", fake_auth_module)
     monkeypatch.setitem(sys.modules, "src.config.settings", fake_settings_module)
@@ -126,6 +150,7 @@ def load_interaction_module(monkeypatch, stream_chunks):
     monkeypatch.setitem(sys.modules, "src.system.telemetry", fake_telemetry_module)
     monkeypatch.setitem(sys.modules, "src.system.tracing", fake_tracing_module)
     monkeypatch.setitem(sys.modules, "src.data.models.session", fake_session_module)
+    monkeypatch.setitem(sys.modules, "src.services.llm_provider", fake_llm_registry_module)
 
     interaction_module = importlib.import_module("src.interface.interaction")
     return interaction_module, trace_updates

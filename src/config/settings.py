@@ -489,6 +489,13 @@ class Settings:
         self.INGESTION_CHUNK_OVERLAP = int(os.getenv("INGESTION_CHUNK_OVERLAP", "128"))
         self.MAX_UPLOAD_SIZE = int(os.getenv("MAX_UPLOAD_SIZE", str(50 * 1024 * 1024)))  # 50 MB
 
+        # Redis Configuration
+        self.REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+        self.REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+        self.REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
+        self.REDIS_CACHE_TTL = int(os.getenv("REDIS_CACHE_TTL", "86400"))  # 24 hours
+        self.REDIS_CACHE_SIMILARITY_THRESHOLD = float(os.getenv("REDIS_CACHE_SIMILARITY_THRESHOLD", "0.95"))
+
         # JWT Configuration
         self.JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "")
         self.JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")

@@ -15,9 +15,14 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 
+import asyncio
+from datetime import date, datetime, timedelta
+
 from src.interface.auth import get_current_session
 from src.config.settings import settings
 from src.agent.workflow import LangGraphAgent
+from src.services.llm_provider import LLMRegistry
+from src.services.cache import cache_service
 from src.system.rate_limit import limiter
 from src.system.logs import logger
 from src.system.telemetry import llm_stream_duration_seconds
@@ -37,6 +42,31 @@ from src.data.schemas.chat import (
 
 router = APIRouter()
 agent = LangGraphAgent()
+
+
+async def _bump_stats(token_count: int = 0) -> None:
+    """Increment question & token counters in Redis (fire-and-forget)."""
+    try:
+        client = await cache_service._get_client()
+        if not client:
+            return
+        today = date.today().isoformat()
+        month = today[:7]  # YYYY-MM
+        pipe = client.pipeline()
+        # Question counters
+        pipe.incrby(f"stats:questions:total", 1)
+        pipe.incrby(f"stats:questions:today:{today}", 1)
+        pipe.expire(f"stats:questions:today:{today}", 86400 * 30)
+        pipe.incrby(f"stats:questions:month:{month}", 1)
+        pipe.expire(f"stats:questions:month:{month}", 86400 * 60)
+        # Token counters
+        if token_count > 0:
+            pipe.incrby(f"stats:tokens:total", token_count)
+            pipe.incrby(f"stats:tokens:today:{today}", token_count)
+            pipe.expire(f"stats:tokens:today:{today}", 86400 * 30)
+        await pipe.execute()
+    except Exception:
+        pass  # stats are best-effort, never block the user
 
 
 def _format_passthrough_stream_event(chunk: str) -> str | None:
@@ -111,6 +141,7 @@ async def chat(
         result = await agent.get_response(
             chat_request.messages, session.id, user_id=session.user_id,
             document_ids=chat_request.document_ids,
+            model=chat_request.model,
         )
 
         messages = result.get("messages", [])
@@ -128,7 +159,14 @@ async def chat(
         ]
 
         if messages:
-            update_current_trace(output={"assistant_message": messages[-1].content if messages else ""})
+            assistant_content = messages[-1].content if messages else ""
+            update_current_trace(output={"assistant_message": assistant_content})
+            # Rough token estimate: ~2 chars per token for Chinese, plus prompt tokens
+            response_tokens = max(len(assistant_content) // 2, 1) if assistant_content else 0
+            # Prompt tokens: sum of all message content lengths
+            prompt_tokens = sum(len(m.content) for m in chat_request.messages) // 2
+            total_tokens = max(prompt_tokens + response_tokens, 1)
+            asyncio.create_task(_bump_stats(token_count=total_tokens))
 
         logger.info("chat_request_processed", session_id=session.id)
 
@@ -194,6 +232,7 @@ async def chat_stream(
                     async for chunk in agent.get_stream_response(
                         chat_request.messages, session.id, user_id=session.user_id,
                         document_ids=chat_request.document_ids,
+                        model=chat_request.model,
                     ):
                         passthrough_event = _format_passthrough_stream_event(chunk)
                         if passthrough_event is not None:
@@ -206,6 +245,10 @@ async def chat_stream(
 
                 # Send final message indicating completion
                 update_current_trace(output={"assistant_message": full_response})
+                response_tokens = max(len(full_response) // 2, 1) if full_response else 0
+                prompt_tokens = sum(len(m.content) for m in chat_request.messages) // 2
+                total_tokens = max(prompt_tokens + response_tokens, 1)
+                asyncio.create_task(_bump_stats(token_count=total_tokens))
                 final_response = StreamResponse(content="", done=True)
                 yield f"data: {json.dumps(final_response.model_dump())}\n\n"
 
@@ -277,4 +320,26 @@ async def clear_chat_history(
         return {"message": "Chat history cleared successfully"}
     except Exception as e:
         logger.error("clear_chat_history_failed", session_id=session.id, error=str(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/models")
+async def list_models():
+    """Return the list of available LLM models.
+
+    The response includes model id, display name, and provider for
+    each configured model.
+    """
+    try:
+        entries = LLMRegistry.list_models()
+        models = []
+        for entry in entries:
+            models.append({
+                "id": entry.get("name", ""),
+                "name": entry.get("name", ""),
+                "provider": entry.get("provider", ""),
+            })
+        return {"models": models, "default": settings.DEFAULT_LLM_MODEL}
+    except Exception as e:
+        logger.error("list_models_failed", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))

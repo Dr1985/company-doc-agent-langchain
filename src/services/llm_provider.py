@@ -286,10 +286,14 @@ class LLMService:
             )
 
     def _create_bound_llm(self, model_name: str, **kwargs) -> BaseChatModel:
-        """Create an LLM instance and bind tools if they are configured."""
+        """Create an LLM instance and bind tools if they are configured.
+
+        Pass ``tools=[]`` in kwargs to explicitly disable tool binding for a single call.
+        """
+        tools_to_bind = kwargs.pop("tools", self._bound_tools)
         llm = LLMRegistry.get(model_name, **kwargs)
-        if self._bound_tools:
-            llm = cast(BaseChatModel, llm.bind_tools(self._bound_tools))
+        if tools_to_bind:
+            llm = cast(BaseChatModel, llm.bind_tools(tools_to_bind))
         return llm
 
     def _get_next_model_index(self) -> int:

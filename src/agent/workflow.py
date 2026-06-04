@@ -50,6 +50,8 @@ from src.data.schemas import (
     Message,
 )
 from src.services.llm_provider import llm_service
+from src.services.cache import cache_service
+from src.embedding.qwen_embedding import qwen_embedding as qwen_embed
 from src.utils import (
     dump_messages,
     prepare_messages,
@@ -319,14 +321,12 @@ class LangGraphAgent:
             else settings.DEFAULT_LLM_MODEL
         )
 
-        # Use RAG prompt when retrieved context is available, otherwise default
-        if state.retrieved_context:
-            SYSTEM_PROMPT = load_rag_system_prompt(
-                long_term_memory=state.long_term_memory,
-                retrieved_context=state.retrieved_context,
-            )
-        else:
-            SYSTEM_PROMPT = load_system_prompt(long_term_memory=state.long_term_memory)
+        # Always use the RAG prompt so the model follows citation rules
+        # and refuses to answer when no relevant documents were found.
+        SYSTEM_PROMPT = load_rag_system_prompt(
+            long_term_memory=state.long_term_memory,
+            retrieved_context=state.retrieved_context or "",
+        )
 
         # Prepare messages with system prompt
         messages = prepare_messages(state.messages, current_llm, SYSTEM_PROMPT)
@@ -334,9 +334,16 @@ class LangGraphAgent:
         trace_context = capture_current_trace_context()
         
         try:
-            # Use LLM service with automatic retries and circular fallback
+            # Use LLM service with automatic retries and circular fallback.
+            # When RAG context is available, disable web search so the model
+            # answers strictly from the retrieved documents.
+            call_kwargs = {}
+            if state.retrieved_context:
+                call_kwargs["tools"] = []
             with llm_inference_duration_seconds.labels(model=model_name).time():
-                response_message = await self.llm_service.call(dump_messages(messages), config=config)
+                response_message = await self.llm_service.call(
+                    dump_messages(messages), config=config, **call_kwargs,
+                )
 
             # Process response to handle structured content blocks
             response_message = process_llm_response(response_message)
@@ -468,18 +475,21 @@ class LangGraphAgent:
         session_id: str,
         user_id: Optional[str] = None,
         document_ids: Optional[list[int]] = None,
+        model: Optional[str] = None,
     ) -> dict:
         """Get a response from the LLM.
 
         Args:
-            messages (list[Message]): The messages to send to the LLM.
-            session_id (str): The session ID for Langfuse tracking.
-            user_id (Optional[str]): The user ID for Langfuse tracking.
-            document_ids (Optional[list[int]]): Optional document IDs to restrict retrieval.
+            messages: The messages to send to the LLM.
+            session_id: The session ID for Langfuse tracking.
+            user_id: The user ID for Langfuse tracking.
+            document_ids: Optional document IDs to restrict retrieval.
+            model: Optional model name override (falls back to DEFAULT_LLM_MODEL).
 
         Returns:
             dict: {"messages": [...], "sources": [...]}
         """
+        used_model = model or settings.DEFAULT_LLM_MODEL
         if self._graph is None:
             self._graph = await self.create_graph()
 
@@ -499,6 +509,24 @@ class LangGraphAgent:
         if callbacks:
             config["callbacks"] = callbacks
 
+        # ── Try cache first ────────────────────────────────────────
+        last_user_content = next(
+            (m.content for m in reversed(messages) if hasattr(m, 'role') and m.role == 'user'),
+            messages[-1].content if messages else "",
+        )
+        try:
+            query_emb = await qwen_embed.embed_query(last_user_content)
+            cached = await cache_service.get(query_emb)
+        except Exception:
+            cached = None
+
+        if cached:
+            answer = cached.get("answer", "")
+            sources = cached.get("sources", [])
+            update_current_span(output={"cached": True, "source_count": len(sources)})
+            logger.info("cache_hit_shortcut", session_id=session_id)
+            return {"messages": [Message(role="assistant", content=answer)], "sources": sources}
+
         with start_trace_span(
             "agent.get_response",
             input={
@@ -506,11 +534,12 @@ class LangGraphAgent:
                 "user_id": str(user_id) if user_id is not None else None,
                 "message_count": len(messages),
                 "document_ids": document_ids,
+                "model": used_model,
             },
             metadata={
                 "stream": False,
                 "provider": settings.ACTIVE_LLM_PROVIDER.value,
-                "model": settings.DEFAULT_LLM_MODEL,
+                "model": used_model,
             },
         ):
             relevant_memory = (
@@ -526,7 +555,6 @@ class LangGraphAgent:
                     config=config,
                 )
                 memory_update_trace_context = capture_current_trace_context()
-                # Run memory update in background without blocking the response
                 asyncio.create_task(
                     self._update_long_term_memory(
                         user_id,
@@ -537,7 +565,25 @@ class LangGraphAgent:
                 )
                 processed_messages = self.__process_messages(response["messages"])
                 sources = response.get("sources", [])
-                update_current_span(output={"response_message_count": len(processed_messages), "source_count": len(sources)})
+
+                # ── Store in cache ─────────────────────────────────
+                assistant_msg = next(
+                    (m for m in processed_messages if getattr(m, 'role', '') == 'assistant'),
+                    None,
+                )
+                if assistant_msg and sources:
+                    try:
+                        await cache_service.set(
+                            query_embedding=query_emb,
+                            query=last_user_content,
+                            answer=getattr(assistant_msg, 'content', ''),
+                            sources=sources,
+                            document_ids=document_ids,
+                        )
+                    except Exception:
+                        pass
+
+                update_current_span(output={"response_message_count": len(processed_messages), "source_count": len(sources), "cached": False})
                 return {"messages": processed_messages, "sources": sources}
             except Exception as e:
                 update_current_span(level="ERROR", status_message=str(e))
@@ -546,19 +592,47 @@ class LangGraphAgent:
 
     async def get_stream_response(
         self, messages: list[Message], session_id: str, user_id: Optional[str] = None,
-        document_ids: Optional[list[int]] = None,
+        document_ids: Optional[list[int]] = None, model: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         """Get a stream response from the LLM.
 
         Args:
-            messages (list[Message]): The messages to send to the LLM.
-            session_id (str): The session ID for the conversation.
-            user_id (Optional[str]): The user ID for the conversation.
-            document_ids (Optional[list[int]]): Optional document IDs to restrict retrieval.
+            messages: The messages to send to the LLM.
+            session_id: The session ID for the conversation.
+            user_id: The user ID for the conversation.
+            document_ids: Optional document IDs to restrict retrieval.
+            model: Optional model name override.
 
         Yields:
-            str: Tokens of the LLM response.
+            str: Tokens of the LLM response, with special ``data:`` prefixed events for sources.
         """
+        import json as _json
+        used_model = model or settings.DEFAULT_LLM_MODEL
+
+        # ── Try cache first ────────────────────────────────────────
+        last_user_content = next(
+            (m.content for m in reversed(messages) if hasattr(m, 'role') and m.role == 'user'),
+            messages[-1].content if messages else "",
+        )
+        query_emb = None
+        try:
+            query_emb = await qwen_embed.embed_query(last_user_content)
+            cached = await cache_service.get(query_emb)
+        except Exception:
+            cached = None
+
+        if cached:
+            answer = cached.get("answer", "")
+            sources = cached.get("sources", [])
+            # Yield cached answer character by character for a streaming feel
+            for ch in answer:
+                yield ch
+            yield f"data: {_json.dumps({'type': 'sources', 'sources': sources})}\n\n"
+            update_current_span(output={"cached": True, "source_count": len(sources)})
+            logger.info("cache_hit_shortcut_stream", session_id=session_id)
+            return
+
+        # ── Normal stream path ────────────────────────────────────
         callbacks = get_langchain_callbacks()
         trace_context = capture_current_trace_context()
         config = {
@@ -584,11 +658,12 @@ class LangGraphAgent:
                 "user_id": str(user_id) if user_id is not None else None,
                 "message_count": len(messages),
                 "document_ids": document_ids,
+                "model": used_model,
             },
             metadata={
                 "stream": True,
                 "provider": settings.ACTIVE_LLM_PROVIDER.value,
-                "model": settings.DEFAULT_LLM_MODEL,
+                "model": used_model,
             },
         ):
             relevant_memory = (
@@ -608,7 +683,6 @@ class LangGraphAgent:
                         yield token_content
                     except Exception as token_error:
                         logger.error("Error processing token", error=str(token_error), session_id=session_id)
-                        # Continue with next token even if current one fails
                         continue
 
                 # After streaming completes, get final state
@@ -626,8 +700,20 @@ class LangGraphAgent:
                     )
                     sources = state.values.get("sources", [])
 
+                # ── Store in cache ─────────────────────────────────
+                if full_response and sources and query_emb:
+                    try:
+                        await cache_service.set(
+                            query_embedding=query_emb,
+                            query=last_user_content,
+                            answer=full_response,
+                            sources=sources,
+                            document_ids=document_ids,
+                        )
+                    except Exception:
+                        pass
+
                 # Yield sources as a special event
-                import json as _json
                 yield f"data: {_json.dumps({'type': 'sources', 'sources': sources})}\n\n"
 
                 update_current_span(output={"response_length": len(full_response), "source_count": len(sources)})

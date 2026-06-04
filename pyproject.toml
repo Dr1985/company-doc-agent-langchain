@@ -41,6 +41,7 @@ dependencies = [
     "PyMuPDF>=1.25.0",
     "python-docx>=1.1.0",
     "langchain-text-splitters>=0.3.0",
+    "redis>=5.0.0",
     "uvloop>=0.22.1; platform_system != 'Windows'",
     #让 uvloop 只在非 Windows 环境安装
 ]

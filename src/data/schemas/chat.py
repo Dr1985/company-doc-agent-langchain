@@ -91,6 +91,10 @@ class ChatRequest(BaseModel):
         default=None,
         description="Optional document IDs to restrict retrieval scope",
     )
+    model: Optional[str] = Field(
+        default=None,
+        description="Optional model name override (falls back to DEFAULT_LLM_MODEL)",
+    )
 
 
 class ChatResponse(BaseModel):

@@ -381,6 +381,7 @@
         <a href="login.html" class="nav-link active">个人中心</a>
         <a href="chat.html" class="nav-link">智能问答</a>
         <a href="documents.html" class="nav-link">文档管理</a>
+        <a href="dashboard.html" class="nav-link">仪表盘</a>
       </div>
       <div class="nav-user">
         <span class="nav-avatar">{{ userInitial }}</span>
@@ -422,6 +423,27 @@
 
         <button class="btn-new-session" @click="createSession">+ 新建会话</button>
 
+        <!-- 修改密码 -->
+        <div class="section-title" style="margin-top:28px;">修改密码</div>
+        <div v-if="pwError" class="error-msg" style="margin-bottom:8px;">{{ pwError }}</div>
+        <div v-if="pwSuccess" class="success-msg" style="margin-bottom:8px;">{{ pwSuccess }}</div>
+        <div class="field">
+          <label>当前密码</label>
+          <input v-model="pwForm.oldPassword" type="password" placeholder="输入当前密码" />
+        </div>
+        <div class="field">
+          <label>新密码</label>
+          <input v-model="pwForm.newPassword" type="password" placeholder="至少8位，含大小写字母、数字、特殊字符" />
+        </div>
+        <div class="field">
+          <label>确认新密码</label>
+          <input v-model="pwForm.newConfirm" type="password" placeholder="再次输入新密码" />
+        </div>
+        <button class="btn btn-primary" @click="handleChangePassword" :disabled="changingPw">
+          {{ changingPw ? '修改中...' : '修改密码' }}
+        </button>
+
+        <!-- Token 信息 -->
         <div class="token-box" style="margin-top:20px;">
           <strong>Token</strong><br>
           <span style="font-size:11px;">{{ tokenPreview }}</span><br>
@@ -643,8 +665,6 @@ createApp({
 
     async function deleteSession(id) {
       try {
-        // 需要用 session token 来删除（API 要求当前 session 匹配）
-        // 暂时用 auth token 调用，后端会处理
         await apiCall(`/auth/session/${id}`, { method: 'DELETE' });
       } catch (e) {
         console.warn('Delete session failed:', e);
@@ -654,6 +674,44 @@ createApp({
         activeSessionId.value = sessions.value[0].id;
         localStorage.setItem('session_id', activeSessionId.value);
       }
+    }
+
+    // ── 修改密码 ──────────────────────────────────────────
+    const pwForm = reactive({ oldPassword: '', newPassword: '', newConfirm: '' });
+    const changingPw = ref(false);
+    const pwError = ref('');
+    const pwSuccess = ref('');
+
+    async function handleChangePassword() {
+      pwError.value = ''; pwSuccess.value = '';
+      if (!pwForm.oldPassword || !pwForm.newPassword) {
+        pwError.value = '请填写当前密码和新密码';
+        return;
+      }
+      if (pwForm.newPassword !== pwForm.newConfirm) {
+        pwError.value = '两次新密码不一致';
+        return;
+      }
+      if (pwForm.newPassword.length < 8) {
+        pwError.value = '新密码至少8位';
+        return;
+      }
+      changingPw.value = true;
+      try {
+        await apiCall('/auth/change-password', {
+          method: 'POST',
+          body: JSON.stringify({
+            old_password: pwForm.oldPassword,
+            new_password: pwForm.newPassword,
+          }),
+        });
+        pwSuccess.value = '密码修改成功！';
+        pwForm.oldPassword = ''; pwForm.newPassword = ''; pwForm.newConfirm = '';
+        setTimeout(() => pwSuccess.value = '', 3000);
+      } catch (e) {
+        pwError.value = '修改失败: ' + e.message;
+      }
+      changingPw.value = false;
     }
 
     // ── 检测已登录状态 ────────────────────────────────────
@@ -675,6 +733,7 @@ createApp({
       activeSessionId, sessions, userInitial, tokenPreview,
       handleLogin, handleRegister, handleLogout,
       switchSession, createSession, deleteSession,
+      pwForm, changingPw, pwError, pwSuccess, handleChangePassword,
     };
   }
 }).mount('#app');

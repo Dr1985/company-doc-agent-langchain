@@ -9,18 +9,18 @@ from typing import List, Optional
 
 from sqlmodel import Session as DBSession, select
 
+from src.config.constants import (
+    DEFAULT_TOP_K,
+    PARENT_WINDOW,
+    RRF_K,
+    VECTOR_WEIGHT,
+)
 from src.data.db_manager import db_manager
 from src.data.models.document import Document, DocumentChunk
 from src.data.schemas.document import ChunkResult
 from src.retrieval.bm25 import bm25_retriever
 from src.retrieval.retriever import retriever as vector_retriever
 from src.system.logs import logger
-
-# ── Constants ────────────────────────────────────────────────────
-
-RRF_K = 60  # Reciprocal Rank Fusion constant
-DEFAULT_TOP_K = 5
-PARENT_WINDOW = 2  # adjacent chunks on each side for parent-doc recall
 
 
 # ── Hybrid Search ────────────────────────────────────────────────

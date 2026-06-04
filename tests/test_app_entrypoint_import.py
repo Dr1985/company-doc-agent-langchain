@@ -30,15 +30,38 @@ MODULES_TO_RESET = [
     "src.interface.router",
     "src.interface.auth",
     "src.interface.interaction",
+    "src.interface.stats",
     "src.agent.workflow",
     "src.agent.tools",
     "src.agent.tools.__init__",
     "src.services.llm_provider",
+    "src.services.cache",
+    "src.services.stats_service",
     "src.config.settings",
     "src.system.logs",
     "src.system.middleware",
     "src.system.tracing",
+    "src.retrieval",
+    "src.retrieval.hybrid",
 ]
+
+
+def _make_fake_services(monkeypatch):
+    """Set up minimal fake modules so main.py can import without heavy deps."""
+    fake_cache = types.ModuleType("src.services.cache")
+    fake_cache.cache_service = types.SimpleNamespace(
+        get=lambda query_embedding: None,
+        set=lambda *a, **kw: None,
+        invalidate=lambda document_id: None,
+        stats=lambda: {"ready": False, "entries": 0},
+    )
+    monkeypatch.setitem(sys.modules, "src.services.cache", fake_cache)
+
+    fake_stats = types.ModuleType("src.services.stats_service")
+    fake_stats.get_overview = lambda: {}
+    fake_stats.get_daily_trend = lambda days=7: []
+    fake_stats.get_model_usage = lambda: []
+    monkeypatch.setitem(sys.modules, "src.services.stats_service", fake_stats)
 
 
 def reset_modules():
@@ -80,6 +103,7 @@ def test_fastapi_entrypoint_sets_selector_event_loop_policy_on_windows(monkeypat
 
     reset_modules()
     monkeypatch.setitem(sys.modules, "src.data.db_manager", fake_db_module)
+    _make_fake_services(monkeypatch)
 
     importlib.import_module("src.main")
 
@@ -114,6 +138,7 @@ def test_fastapi_entrypoint_imports_with_stubbed_database(monkeypatch):
 
     reset_modules()
     monkeypatch.setitem(sys.modules, "src.data.db_manager", fake_db_module)
+    _make_fake_services(monkeypatch)
 
     main_module = importlib.import_module("src.main")
 
@@ -167,6 +192,7 @@ def test_fastapi_entrypoint_run_uses_embedded_uvicorn_launcher(monkeypatch):
     reset_modules()
     monkeypatch.setitem(sys.modules, "src.data.db_manager", fake_db_module)
     monkeypatch.setitem(sys.modules, "uvicorn", fake_uvicorn)
+    _make_fake_services(monkeypatch)
 
     main_module = importlib.import_module("src.main")
     main_module.run()

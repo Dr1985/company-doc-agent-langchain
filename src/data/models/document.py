@@ -39,6 +39,7 @@ class Document(SQLModel, table=True):
     file_type: str = Field(max_length=32)  # pdf / txt / docx / md
     file_size: int = Field(default=0)  # bytes
     storage_path: str = Field(max_length=1024)  # MinIO object key
+    md5_hash: Optional[str] = Field(default=None, max_length=64, index=True)  # MD5 for dedup
     status: str = Field(
         default="uploading", max_length=32, index=True
     )  # uploading → processing → ready | failed

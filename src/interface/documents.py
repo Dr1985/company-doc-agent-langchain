@@ -3,6 +3,7 @@
 Provides upload, status-check, listing, deletion, and retrieval routes.
 """
 
+import hashlib
 import os
 import tempfile
 from pathlib import Path
@@ -105,6 +106,19 @@ async def upload_document(
             detail="Empty file",
         )
 
+    # Check for duplicate by MD5 hash
+    file_md5 = hashlib.md5(content).hexdigest()
+    with DBSession(db_manager.engine) as session:
+        existing = session.exec(
+            select(Document).where(Document.__table__.c.md5_hash == file_md5)
+        ).all()
+        if existing:
+            existing_doc = existing[0]
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"文件已存在（与「{existing_doc.filename}」内容相同），请勿重复上传",
+            )
+
     # Save to temp
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_type}")
     try:
@@ -122,6 +136,7 @@ async def upload_document(
                 file_type=file_type,
                 file_size=file_size,
                 storage_path=object_name,
+                md5_hash=file_md5,
                 status="uploading",
             )
             session.add(doc)
