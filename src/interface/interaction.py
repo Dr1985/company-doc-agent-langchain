@@ -39,6 +39,22 @@ router = APIRouter()
 agent = LangGraphAgent()
 
 
+def _format_passthrough_stream_event(chunk: str) -> str | None:
+    """Return a normalized SSE payload for known control events emitted by the agent."""
+    if not chunk.startswith("data: "):
+        return None
+
+    try:
+        event = json.loads(chunk[6:].strip())
+    except json.JSONDecodeError:
+        return None
+
+    if event.get("type") != "sources":
+        return None
+
+    return f"data: {json.dumps(event)}\n\n"
+
+
 def _build_trace_input(chat_request: ChatRequest) -> dict:
     """Build a concise trace payload for a chat request."""
     last_user_message = next(
@@ -175,6 +191,11 @@ async def chat_stream(
                     async for chunk in agent.get_stream_response(
                         chat_request.messages, session.id, user_id=session.user_id
                     ):
+                        passthrough_event = _format_passthrough_stream_event(chunk)
+                        if passthrough_event is not None:
+                            yield passthrough_event
+                            continue
+
                         full_response += chunk
                         response = StreamResponse(content=chunk, done=False)
                         yield f"data: {json.dumps(response.model_dump())}\n\n"
