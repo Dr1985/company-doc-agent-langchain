@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>问答 - 公司知识问答系统</title>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: #f5f6fa;
+    height: 100vh;
+    color: #1a1a2e;
+  }
+
+  #app { height: 100vh; display: flex; flex-direction: column; }
+  .app-body { flex: 1; display: flex; min-height: 0; }
+
+  /* ====== Sidebar ====== */
+  .sidebar {
+    width: 260px;
+    background: #fff;
+    border-right: 1px solid #edf0f5;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+  .sidebar-header {
+    padding: 20px 20px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .sidebar-logo {
+    font-weight: 700;
+    font-size: 18px;
+    color: #1a1a2e;
+  }
+  .sidebar-user {
+    padding: 0 20px 16px;
+    font-size: 13px;
+    color: #8e8ea0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .sidebar-avatar {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: #1a1a2e;
+    color: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 600;
+  }
+
+  .sidebar-section {
+    padding: 0 14px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #b0b0c0;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+  }
+
+  .session-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 10px;
+    list-style: none;
+  }
+  .session-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #4a4a60;
+    margin-bottom: 2px;
+    transition: all .15s;
+  }
+  .session-item:hover { background: #f5f6fa; }
+  .session-item.active { background: #f0f0f0; color: #1a1a2e; font-weight: 500; }
+  .session-del { opacity: 0; font-size: 14px; color: #c0c0d0; transition: opacity .15s; }
+  .session-item:hover .session-del { opacity: 1; }
+  .session-del:hover { color: #e85d75; }
+
+  .sidebar-footer {
+    padding: 14px 14px;
+    border-top: 1px solid #f0f0f5;
+  }
+  .btn-new-chat {
+    width: 100%;
+    padding: 9px;
+    border: 2px dashed #d8dae5;
+    border-radius: 10px;
+    background: #fafbfc;
+    color: #6b6b80;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .btn-new-chat:hover { border-color: #1a1a2e; color: #1a1a2e; background: #f5f5f5; }
+
+  /* ====== Main Chat Area ====== */
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: #fff;
+  }
+
+  .chat-header {
+    padding: 16px 24px;
+    border-bottom: 1px solid #f0f0f5;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .chat-title {
+    font-weight: 600;
+    font-size: 16px;
+  }
+  .header-actions { display: flex; gap: 8px; }
+  .btn-hdr {
+    padding: 6px 14px;
+    font-size: 13px;
+    border-radius: 8px;
+    border: 1.5px solid #e4e6ef;
+    background: #fff;
+    color: #5a5a70;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all .2s;
+  }
+  .btn-hdr:hover { border-color: #1a1a2e; color: #1a1a2e; }
+  .btn-hdr.danger { color: #e85d75; border-color: #fdd; }
+  .btn-hdr.danger:hover { background: #fff5f5; }
+
+  .mode-switch {
+    display: flex;
+    gap: 0;
+    background: #f3f4f8;
+    border-radius: 8px;
+    padding: 3px;
+  }
+  .mode-btn {
+    padding: 5px 12px;
+    font-size: 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    color: #6b6b80;
+    font-weight: 500;
+    transition: all .2s;
+  }
+  .mode-btn.active { background: #fff; color: #1a1a2e; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+
+  /* ====== Messages ====== */
+  .messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .msg {
+    display: flex;
+    gap: 12px;
+    max-width: 80%;
+    animation: fadeUp .3s ease;
+  }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  .msg.user { align-self: flex-end; flex-direction: row-reverse; }
+  .msg.assistant { align-self: flex-start; }
+
+  .msg-avatar {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 600;
+  }
+  .msg.user .msg-avatar { background: #1a1a2e; color: #fff; }
+  .msg.assistant .msg-avatar { background: #f0f0f0; color: #1a1a2e; }
+
+  .msg-bubble {
+    padding: 12px 16px;
+    border-radius: 14px;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .msg.user .msg-bubble { background: #1a1a2e; color: #fff; border-bottom-right-radius: 4px; }
+  .msg.assistant .msg-bubble { background: #f5f6fa; color: #1a1a2e; border-bottom-left-radius: 4px; }
+
+  /* Refusal */
+  .msg.assistant .msg-bubble.refusal {
+    background: #fff8f0;
+    border: 1px solid #ffe4c4;
+    color: #b07a30;
+  }
+
+  /* ── Markdown 渲染样式 ────────────────────────────── */
+  .msg-bubble h1, .msg-bubble h2, .msg-bubble h3, .msg-bubble h4 {
+    margin: 14px 0 6px;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .msg-bubble h1 { font-size: 1.3em; }
+  .msg-bubble h2 { font-size: 1.15em; }
+  .msg-bubble h3 { font-size: 1.05em; }
+  .msg-bubble h4 { font-size: 1em; }
+  .msg-bubble h1:first-child, .msg-bubble h2:first-child, .msg-bubble h3:first-child { margin-top: 0; }
+
+  .msg-bubble p { margin: 4px 0; line-height: 1.65; }
+  .msg-bubble p:first-child { margin-top: 0; }
+  .msg-bubble p:last-child { margin-bottom: 0; }
+
+  .msg-bubble strong { font-weight: 600; }
+  .msg-bubble em { font-style: italic; }
+
+  .msg-bubble ul, .msg-bubble ol {
+    margin: 6px 0;
+    padding-left: 20px;
+  }
+  .msg-bubble li { margin: 2px 0; line-height: 1.55; }
+
+  .msg-bubble code {
+    background: rgba(0,0,0,.08);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: .9em;
+    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', 'Monaco', monospace;
+  }
+  .msg-bubble pre {
+    background: rgba(0,0,0,.06);
+    padding: 12px 14px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 8px 0;
+    font-size: .88em;
+    line-height: 1.5;
+  }
+  .msg-bubble pre code { background: none; padding: 0; }
+
+  .msg-bubble blockquote {
+    border-left: 3px solid #b0b0c0;
+    padding-left: 12px;
+    margin: 8px 0;
+    color: #6b6b80;
+  }
+
+  .msg-bubble table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 8px 0;
+    font-size: .9em;
+  }
+  .msg-bubble th, .msg-bubble td {
+    border: 1px solid #d0d0d0;
+    padding: 6px 10px;
+    text-align: left;
+  }
+  .msg-bubble th { background: rgba(0,0,0,.04); font-weight: 600; }
+
+  .msg-bubble hr { border: none; border-top: 1px solid #d0d0d0; margin: 12px 0; }
+
+  .msg-bubble a { color: #3a7bd5; text-decoration: underline; }
+
+  /* 用户消息气泡中 Markdown 颜色调整 */
+  .msg.user .msg-bubble code { background: rgba(255,255,255,.15); color: #fff; }
+  .msg.user .msg-bubble blockquote { border-color: rgba(255,255,255,.3); color: rgba(255,255,255,.8); }
+  .msg.user .msg-bubble th, .msg.user .msg-bubble td { border-color: rgba(255,255,255,.2); }
+  .msg.user .msg-bubble th { background: rgba(255,255,255,.1); }
+  .msg.user .msg-bubble a { color: #9fc5ff; }
+
+  /* Streaming cursor */
+  .stream-cursor {
+    display: inline-block;
+    width: 8px; height: 16px;
+    background: #1a1a2e;
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    animation: blink .8s infinite;
+  }
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+
+  /* ====== Citations ====== */
+  .citations {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #e8e9f0;
+  }
+  .cite-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #b0b0c0;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    margin-bottom: 6px;
+  }
+  .cite-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    background: #fff;
+    border: 1px solid #eef0f5;
+    border-radius: 8px;
+    margin-bottom: 6px;
+    font-size: 12px;
+    transition: all .15s;
+  }
+  .cite-num {
+    background: #1a1a2e;
+    color: #fff;
+    min-width: 22px; height: 22px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .cite-body { flex: 1; min-width: 0; }
+  .cite-doc {
+    font-weight: 500;
+    color: #3a3a50;
+    margin-bottom: 2px;
+  }
+  .cite-chunk {
+    font-weight: 400;
+    color: #8e8ea0;
+    font-size: 11px;
+  }
+  .cite-preview {
+    color: #6b6b80;
+    font-size: 11px;
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .cite-score {
+    flex-shrink: 0;
+    font-size: 11px;
+    color: #b0b0c0;
+    white-space: nowrap;
+  }
+
+  /* ====== Input Area ====== */
+  .input-area {
+    padding: 16px 24px;
+    border-top: 1px solid #f0f0f5;
+  }
+  .input-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+  }
+  .input-box {
+    flex: 1;
+    padding: 12px 16px;
+    border: 2px solid #e8e9f0;
+    border-radius: 12px;
+    font-size: 14px;
+    resize: none;
+    outline: none;
+    font-family: inherit;
+    color: #1a1a2e;
+    transition: border-color .2s;
+    background: #fafbfc;
+    min-height: 46px;
+    max-height: 120px;
+    line-height: 1.5;
+  }
+  .input-box:focus { border-color: #1a1a2e; background: #fff; box-shadow: 0 0 0 3px rgba(0,0,0,.08); }
+  .input-box::placeholder { color: #c0c0d0; }
+
+  .btn-send {
+    width: 46px; height: 46px;
+    border-radius: 12px;
+    border: none;
+    background: #1a1a2e;
+    color: #fff;
+    font-size: 18px;
+    cursor: pointer;
+    transition: all .2s;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .btn-send:hover { opacity: .92; transform: translateY(-1px); box-shadow: 0 4px 14px rgba(0,0,0,.15); }
+  .btn-send:disabled { opacity: .4; cursor: not-allowed; transform: none; box-shadow: none; }
+
+  .input-hint {
+    font-size: 11px;
+    color: #c0c0d0;
+    margin-top: 8px;
+    text-align: center;
+  }
+
+  /* ====== Empty State ====== */
+  .empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #b0b0c0;
+    gap: 8px;
+  }
+  .empty-icon { font-size: 48px; margin-bottom: 4px; }
+  .empty-title { font-size: 16px; font-weight: 500; color: #8e8ea0; }
+  .empty-desc { font-size: 13px; }
+
+  /* Scrollbar */
+  .messages::-webkit-scrollbar, .session-list::-webkit-scrollbar { width: 5px; }
+  .messages::-webkit-scrollbar-thumb, .session-list::-webkit-scrollbar-thumb { background: #d8dae5; border-radius: 10px; }
+
+  /* ---- Top Nav Bar ---- */
+  .top-nav {
+    background: #fff;
+    border-bottom: 1px solid #edf0f5;
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    height: 56px;
+    gap: 32px;
+    flex-shrink: 0;
+  }
+  .nav-brand { font-weight: 700; font-size: 17px; color: #1a1a2e; white-space: nowrap; }
+  .nav-links { display: flex; gap: 4px; flex: 1; }
+  .nav-link {
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #6b6b80;
+    text-decoration: none;
+    transition: all .15s;
+  }
+  .nav-link:hover { background: #f5f6fa; color: #1a1a2e; }
+  .nav-link.active { background: #f0f0f0; color: #1a1a2e; }
+  .nav-user {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: #5a5a70;
+  }
+  .nav-avatar {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: #1a1a2e;
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 600;
+  }
+  .nav-logout {
+    padding: 5px 12px;
+    font-size: 12px;
+    border-radius: 6px;
+    border: 1.5px solid #fdd;
+    background: #fff;
+    color: #e85d75;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all .2s;
+  }
+  .nav-logout:hover { background: #fff5f5; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- Top Navigation -->
+  <nav class="top-nav">
+    <span class="nav-brand">KnowledgeHub</span>
+    <div class="nav-links">
+      <a href="login.html" class="nav-link">个人中心</a>
+      <a href="chat.html" class="nav-link active">智能问答</a>
+      <a href="documents.html" class="nav-link">文档管理</a>
+    </div>
+    <div class="nav-user">
+      <span class="nav-avatar">{{ userInitial }}</span>
+      <span>{{ currentUser }}</span>
+      <button class="nav-logout" @click="handleLogout">退出</button>
+    </div>
+  </nav>
+
+  <div class="app-body">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-logo">KnowledgeHub</span>
+    </div>
+    <div class="sidebar-user">
+      <span class="sidebar-avatar">{{ userInitial }}</span>
+      <span>{{ currentUser }}</span>
+    </div>
+    <div class="sidebar-section">会话</div>
+    <ul class="session-list">
+      <li v-for="s in sessions" :key="s.id"
+          class="session-item" :class="{ active: s.id === activeSessionId }"
+          @click="switchSession(s.id)">
+        <span>{{ s.name }}</span>
+        <span class="session-del" @click.stop="deleteSession(s.id)">×</span>
+      </li>
+    </ul>
+    <div class="sidebar-footer">
+      <button class="btn-new-chat" @click="createSession">+ 新建会话</button>
+    </div>
+  </aside>
+
+  <!-- Main Chat -->
+  <main class="main">
+    <!-- Header -->
+    <div class="chat-header">
+      <span class="chat-title">{{ currentSessionName }}</span>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div class="mode-switch">
+          <button class="mode-btn" :class="{ active: answerMode === 'sync' }" @click="answerMode = 'sync'">同步</button>
+          <button class="mode-btn" :class="{ active: answerMode === 'stream' }" @click="answerMode = 'stream'">流式</button>
+        </div>
+        <button class="btn-hdr danger" @click="clearMessages">清空会话</button>
+      </div>
+    </div>
+
+    <!-- Messages -->
+    <div class="messages" ref="msgContainer">
+      <div v-if="messages.length === 0" class="empty-state">
+        <div class="empty-icon">💬</div>
+        <div class="empty-title">开始提问</div>
+        <div class="empty-desc">输入你的问题，系统将从知识库中检索相关文档并回答</div>
+      </div>
+
+      <div v-for="(msg, i) in messages" :key="i" class="msg" :class="msg.role">
+        <div class="msg-avatar">{{ msg.role === 'user' ? userInitial : 'AI' }}</div>
+        <div style="flex:1;min-width:0;">
+          <div class="msg-bubble" :class="{ refusal: msg.isRefusal }">
+            <span v-html="renderMarkdown(msg.content)"></span><span v-if="msg.streaming" class="stream-cursor"></span>
+          </div>
+
+          <!-- Citations -->
+          <div v-if="msg.sources && msg.sources.length" class="citations">
+            <div class="cite-label">📎 引用来源</div>
+            <div v-for="(src, si) in msg.sources" :key="si" class="cite-item">
+              <span class="cite-num">{{ si + 1 }}</span>
+              <div class="cite-body">
+                <div class="cite-doc">{{ src.doc }} <span class="cite-chunk">Chunk #{{ src.chunk }}</span></div>
+                <div class="cite-preview">{{ src.preview }}</div>
+              </div>
+              <span class="cite-score">相似度 {{ (src.score * 100).toFixed(0) }}%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div class="input-area">
+      <div class="input-row">
+        <textarea
+          class="input-box"
+          v-model="inputText"
+          placeholder="输入你的问题，按 Enter 发送..."
+          rows="1"
+          @keydown.enter.exact.prevent="sendMessage"
+          @input="autoResize"
+          ref="inputEl"
+        ></textarea>
+        <button class="btn-send" @click="sendMessage" :disabled="!inputText.trim() || isGenerating">
+          ↑
+        </button>
+      </div>
+      <div class="input-hint">Enter 发送 · 当前模式：{{ answerMode === 'sync' ? '同步回答' : '流式回答 (SSE)' }}</div>
+    </div>
+  </main>
+  </div><!-- .app-body -->
+</div>
+
+<script>
+const { createApp, ref, reactive, computed, nextTick, onMounted } = Vue;
+
+// ── API Configuration ──────────────────────────────────────────
+const API_BASE = localStorage.getItem('api_base') || 'http://localhost:8000/api/v1';
+const getAuthToken = () => localStorage.getItem('auth_token') || '';
+const getSessionToken = () => localStorage.getItem('session_token') || '';
+const getSessionId = () => localStorage.getItem('session_id') || '';
+
+async function apiCall(path, options = {}) {
+  const headers = { 'Content-Type': 'application/json', ...options.headers };
+  const token = getSessionToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `HTTP ${res.status}`);
+  }
+  return res;
+}
+
+// auth endpoints need user token, not session token
+async function authApiCall(path, options = {}) {
+  const headers = { 'Content-Type': 'application/json', ...options.headers };
+  const token = getAuthToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `HTTP ${res.status}`);
+  }
+  return res;
+}
+
+createApp({
+  setup() {
+    const currentUser = ref(localStorage.getItem('username') || '用户');
+    const answerMode = ref('sync');
+    const inputText = ref('');
+    const isGenerating = ref(false);
+    const msgContainer = ref(null);
+    const inputEl = ref(null);
+
+    const userInitial = computed(() => (currentUser.value || '?')[0]?.toUpperCase());
+
+    const activeSessionId = ref(getSessionId() || '');
+    const sessions = ref([]);
+
+    const currentSessionName = computed(() => {
+      const s = sessions.value.find(s => s.id === activeSessionId.value);
+      return s ? s.name : '问答';
+    });
+
+    const messages = ref([]);
+    const allMessages = ref([]); // full conversation for API
+
+    // ── Helper: convert internal sources format ──────────────────
+    function mapSources(rawSources) {
+      return (rawSources || []).map(s => ({
+        doc: s.filename || `文档 #${s.document_id}`,
+        chunk: s.chunk_index || 0,
+        score: s.score || 0,
+        preview: s.preview || '',
+      }));
+    }
+
+    // ── Markdown 渲染 ──────────────────────────────────────────
+    function renderMarkdown(text) {
+      if (!text || typeof text !== 'string') return '';
+      try {
+        if (typeof marked !== 'undefined') {
+          const html = marked.parse(text, { breaks: true, gfm: true });
+          return html;
+        }
+      } catch (e) { /* 解析失败则降级为纯文本 */ }
+      return escapeHtml(text).replace(/\n/g, '<br>');
+    }
+
+    function escapeHtml(str) {
+      const el = document.createElement('span');
+      el.textContent = str;
+      return el.innerHTML;
+    }
+
+    function padSessionPart(value) {
+      return String(value).padStart(2, '0');
+    }
+
+    function formatSessionTimestamp(date = new Date()) {
+      return `${date.getFullYear()}-${padSessionPart(date.getMonth() + 1)}-${padSessionPart(date.getDate())} ${padSessionPart(date.getHours())}:${padSessionPart(date.getMinutes())}:${padSessionPart(date.getSeconds())}`;
+    }
+
+    function resolveSessionName(name, fallbackDate = new Date()) {
+      return typeof name === 'string' && name.trim() ? name.trim() : formatSessionTimestamp(fallbackDate);
+    }
+
+    // ── Session management ──────────────────────────────────────
+    async function loadSessions() {
+      try {
+        const res = await authApiCall('/auth/sessions');
+        const data = await res.json();
+        sessions.value = (data || []).map(s => ({
+          id: s.session_id,
+          name: resolveSessionName(s.name),
+          _token: (s.token && s.token.access_token) || '',
+        }));
+
+        const preferredSessionId = activeSessionId.value || getSessionId();
+        const nextActiveSession = sessions.value.find(s => s.id === preferredSessionId) || sessions.value[0];
+
+        if (nextActiveSession) {
+          activeSessionId.value = nextActiveSession.id;
+          localStorage.setItem('session_id', nextActiveSession.id);
+
+          if (nextActiveSession._token) {
+            localStorage.setItem('session_token', nextActiveSession._token);
+          } else {
+            localStorage.removeItem('session_token');
+          }
+        } else {
+          activeSessionId.value = '';
+          localStorage.removeItem('session_id');
+          localStorage.removeItem('session_token');
+        }
+      } catch (e) {
+        // Degrade: use local sessions
+        console.warn('Load sessions failed:', e);
+        if (sessions.value.length === 0) {
+          sessions.value = [
+            { id: 'local-1', name: formatSessionTimestamp() },
+          ];
+          activeSessionId.value = 'local-1';
+        }
+      }
+    }
+
+    async function loadMessages() {
+      if (!getSessionToken()) return;
+      try {
+        const res = await apiCall(`/chatbot/messages`);
+        const data = await res.json();
+        allMessages.value = (data.messages || []).map(m => ({
+          role: m.role, content: m.content
+        }));
+        // Display only the last exchange
+        const displayMsgs = [];
+        const lastSources = (data.sources || []).map(s => ({
+          doc: s.filename || '', chunk: s.chunk_index, score: s.score, preview: s.preview
+        }));
+        for (let i = 0; i < allMessages.value.length; i++) {
+          const m = allMessages.value[i];
+          displayMsgs.push({
+            role: m.role,
+            content: m.content,
+            sources: m.role === 'assistant' && i === allMessages.value.length - 1 ? lastSources : [],
+            isRefusal: m.content.includes('无法回答') || m.content.includes('未检索到'),
+          });
+        }
+        messages.value = displayMsgs;
+        scrollToBottom();
+      } catch (e) {
+        console.warn('Failed to load messages:', e);
+      }
+    }
+
+    // ── Chat ────────────────────────────────────────────────────
+    function scrollToBottom() {
+      nextTick(() => {
+        if (msgContainer.value) {
+          msgContainer.value.scrollTop = msgContainer.value.scrollHeight;
+        }
+      });
+    }
+
+    function autoResize(e) {
+      const el = e.target;
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+    }
+
+    async function sendMessage() {
+      const text = inputText.value.trim();
+      if (!text || isGenerating.value) return;
+
+      messages.value.push({ role: 'user', content: text });
+      allMessages.value.push({ role: 'user', content: text });
+      inputText.value = '';
+      if (inputEl.value) { inputEl.value.style.height = 'auto'; }
+      scrollToBottom();
+
+      if (!getSessionToken()) {
+        // Fallback to mock if no auth
+        mockReply(text);
+        return;
+      }
+
+      if (answerMode.value === 'stream') {
+        await streamReply();
+      } else {
+        await syncReply();
+      }
+    }
+
+    async function syncReply() {
+      isGenerating.value = true;
+      const msgIdx = messages.value.length;
+      messages.value.push({ role: 'assistant', content: '', sources: [], isRefusal: false });
+      scrollToBottom();
+
+      try {
+        const body = { messages: allMessages.value };
+        // 读取文档选择页的选定文档 ID，限定检索范围
+        const selectedIds = getSelectedDocIds();
+        if (selectedIds.length > 0) body.document_ids = selectedIds;
+
+        const res = await apiCall('/chatbot/chat', {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        const reply = data.messages[data.messages.length - 1];
+        const sources = mapSources(data.sources || []);
+        messages.value[msgIdx].content = reply.content || '';
+        messages.value[msgIdx].sources = sources;
+        messages.value[msgIdx].isRefusal = reply.content.includes('无法回答') || reply.content.includes('未检索到');
+        allMessages.value.push({ role: 'assistant', content: reply.content });
+      } catch (e) {
+        messages.value[msgIdx].content = '请求失败: ' + e.message;
+      }
+      isGenerating.value = false;
+      scrollToBottom();
+    }
+
+    async function streamReply() {
+      isGenerating.value = true;
+      const msgIdx = messages.value.length;
+      messages.value.push({ role: 'assistant', content: '', sources: [], isRefusal: false, streaming: true });
+      scrollToBottom();
+
+      try {
+        const token = getSessionToken();
+        const body = { messages: allMessages.value };
+        const selectedIds = getSelectedDocIds();
+        if (selectedIds.length > 0) body.document_ids = selectedIds;
+
+        const res = await fetch(`${API_BASE}/chatbot/chat/stream`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify(body),
+        });
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let fullContent = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const json = line.slice(6);
+            try {
+              const event = JSON.parse(json);
+              if (event.type === 'sources') {
+                messages.value[msgIdx].sources = mapSources(event.sources || []);
+              } else if (event.content && !event.done) {
+                fullContent += event.content;
+                messages.value[msgIdx].content = fullContent;
+                scrollToBottom();
+              }
+            } catch (e) { /* skip malformed */ }
+          }
+        }
+
+        messages.value[msgIdx].streaming = false;
+        messages.value[msgIdx].isRefusal = fullContent.includes('无法回答') || fullContent.includes('未检索到');
+        allMessages.value.push({ role: 'assistant', content: fullContent });
+      } catch (e) {
+        messages.value[msgIdx].content = '流式请求失败: ' + e.message;
+        messages.value[msgIdx].streaming = false;
+      }
+      isGenerating.value = false;
+      scrollToBottom();
+    }
+
+    // ── 文档选择范围 ──────────────────────────────────────────
+    function getSelectedDocIds() {
+      try {
+        const raw = localStorage.getItem('selected_doc_ids');
+        if (!raw) return [];
+        const ids = JSON.parse(raw);
+        return Array.isArray(ids) ? ids.filter(id => typeof id === 'number' || Number.isInteger(id)) : [];
+      } catch (e) { return []; }
+    }
+
+    // ── Mock fallback ───────────────────────────────────────────
+    function mockReply(text) {
+      isGenerating.value = true;
+      const msgIdx = messages.value.length;
+      messages.value.push({ role: 'assistant', content: '正在思考...', sources: [], isRefusal: false });
+      scrollToBottom();
+      setTimeout(() => {
+        messages.value[msgIdx].content = '（离线模式）请先登录以使用知识库问答功能。';
+        isGenerating.value = false;
+        scrollToBottom();
+      }, 600);
+    }
+
+    async function clearMessages() {
+      messages.value = [];
+      allMessages.value = [];
+      if (getSessionToken()) {
+        try {
+          await apiCall('/chatbot/messages', { method: 'DELETE' });
+        } catch (e) { console.warn('Clear messages failed:', e); }
+      }
+    }
+
+    async function switchSession(id) {
+      activeSessionId.value = id;
+      localStorage.setItem('session_id', id);
+      // update session_token from cached sessions
+      const s = sessions.value.find(s => s.id === id);
+      if (s && s._token) {
+        localStorage.setItem('session_token', s._token);
+      } else {
+        localStorage.removeItem('session_token');
+      }
+      messages.value = [];
+      allMessages.value = [];
+      await loadMessages();
+    }
+
+    async function createSession() {
+      if (!getAuthToken()) {
+        const id = 'local-' + Date.now();
+        sessions.value.unshift({ id, name: formatSessionTimestamp() });
+        activeSessionId.value = id;
+        localStorage.setItem('session_id', id);
+        messages.value = [];
+        allMessages.value = [];
+        return;
+      }
+      try {
+        const res = await authApiCall('/auth/session', { method: 'POST' });
+        const data = await res.json();
+        sessions.value.unshift({ id: data.session_id, name: resolveSessionName(data.name), _token: data.token.access_token });
+        activeSessionId.value = data.session_id;
+        localStorage.setItem('session_id', data.session_id);
+        localStorage.setItem('session_token', data.token.access_token);
+        messages.value = [];
+        allMessages.value = [];
+      } catch (e) {
+        console.warn('Create session failed:', e);
+      }
+    }
+
+    function deleteSession(id) {
+      sessions.value = sessions.value.filter(s => s.id !== id);
+      if (activeSessionId.value === id && sessions.value.length > 0) {
+        activeSessionId.value = sessions.value[0].id;
+        messages.value = [];
+      }
+    }
+
+    onMounted(async () => {
+      // Check auth - redirect to login if not authenticated
+      if (!getAuthToken()) {
+        window.location.href = 'login.html';
+        return;
+      }
+      currentUser.value = localStorage.getItem('username') || '用户';
+      await loadSessions();
+      await loadMessages();
+      scrollToBottom();
+    });
+
+    function handleLogout() {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('session_token');
+      localStorage.removeItem('session_id');
+      localStorage.removeItem('username');
+      window.location.href = 'login.html';
+    }
+
+    return {
+      currentUser, userInitial, answerMode,
+      inputText, isGenerating, messages, msgContainer, inputEl,
+      activeSessionId, sessions, currentSessionName,
+      sendMessage, autoResize, clearMessages,
+      switchSession, createSession, deleteSession, handleLogout,
+      renderMarkdown,
+    };
+  }
+}).mount('#app');
+</script>
+</body>
+</html>

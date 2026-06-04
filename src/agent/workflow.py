@@ -271,6 +271,7 @@ class LangGraphAgent:
                     query=last_user_msg,
                     top_k=5,
                     include_parent_docs=True,
+                    document_ids=state.document_ids,
                 )
                 update_current_span(output={
                     "chunk_count": len(result["chunks"]),
@@ -466,6 +467,7 @@ class LangGraphAgent:
         messages: list[Message],
         session_id: str,
         user_id: Optional[str] = None,
+        document_ids: Optional[list[int]] = None,
     ) -> dict:
         """Get a response from the LLM.
 
@@ -473,6 +475,7 @@ class LangGraphAgent:
             messages (list[Message]): The messages to send to the LLM.
             session_id (str): The session ID for Langfuse tracking.
             user_id (Optional[str]): The user ID for Langfuse tracking.
+            document_ids (Optional[list[int]]): Optional document IDs to restrict retrieval.
 
         Returns:
             dict: {"messages": [...], "sources": [...]}
@@ -502,6 +505,7 @@ class LangGraphAgent:
                 "session_id": session_id,
                 "user_id": str(user_id) if user_id is not None else None,
                 "message_count": len(messages),
+                "document_ids": document_ids,
             },
             metadata={
                 "stream": False,
@@ -514,7 +518,11 @@ class LangGraphAgent:
             ) or "No relevant memory found."
             try:
                 response = await self._graph.ainvoke(
-                    input={"messages": dump_messages(messages), "long_term_memory": relevant_memory},
+                    input={
+                        "messages": dump_messages(messages),
+                        "long_term_memory": relevant_memory,
+                        "document_ids": document_ids,
+                    },
                     config=config,
                 )
                 memory_update_trace_context = capture_current_trace_context()
@@ -537,7 +545,8 @@ class LangGraphAgent:
                 raise
 
     async def get_stream_response(
-        self, messages: list[Message], session_id: str, user_id: Optional[str] = None
+        self, messages: list[Message], session_id: str, user_id: Optional[str] = None,
+        document_ids: Optional[list[int]] = None,
     ) -> AsyncGenerator[str, None]:
         """Get a stream response from the LLM.
 
@@ -545,6 +554,7 @@ class LangGraphAgent:
             messages (list[Message]): The messages to send to the LLM.
             session_id (str): The session ID for the conversation.
             user_id (Optional[str]): The user ID for the conversation.
+            document_ids (Optional[list[int]]): Optional document IDs to restrict retrieval.
 
         Yields:
             str: Tokens of the LLM response.
@@ -573,6 +583,7 @@ class LangGraphAgent:
                 "session_id": session_id,
                 "user_id": str(user_id) if user_id is not None else None,
                 "message_count": len(messages),
+                "document_ids": document_ids,
             },
             metadata={
                 "stream": True,
@@ -587,7 +598,7 @@ class LangGraphAgent:
 
             try:
                 async for token, _ in self._graph.astream(
-                    {"messages": dump_messages(messages), "long_term_memory": relevant_memory},
+                    {"messages": dump_messages(messages), "long_term_memory": relevant_memory, "document_ids": document_ids},
                     config,
                     stream_mode="messages",
                 ):

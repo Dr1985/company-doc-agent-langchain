@@ -18,3 +18,4 @@ class GraphState(BaseModel):
     long_term_memory: str = Field(default="", description="The long term memory of the conversation")
     retrieved_context: str = Field(default="", description="Formatted RAG context for the LLM")
     sources: List[Dict[str, Any]] = Field(default_factory=list, description="Citation sources for RAG responses")
+    document_ids: Optional[List[int]] = Field(default=None, description="Optional document IDs to restrict retrieval scope")

@@ -108,7 +108,10 @@ async def chat(
             },
         )
 
-        result = await agent.get_response(chat_request.messages, session.id, user_id=session.user_id)
+        result = await agent.get_response(
+            chat_request.messages, session.id, user_id=session.user_id,
+            document_ids=chat_request.document_ids,
+        )
 
         messages = result.get("messages", [])
         sources = result.get("sources", [])
@@ -189,7 +192,8 @@ async def chat_stream(
                 full_response = ""
                 with llm_stream_duration_seconds.labels(model=agent.llm_service.get_llm().get_name()).time():
                     async for chunk in agent.get_stream_response(
-                        chat_request.messages, session.id, user_id=session.user_id
+                        chat_request.messages, session.id, user_id=session.user_id,
+                        document_ids=chat_request.document_ids,
                     ):
                         passthrough_event = _format_passthrough_stream_event(chunk)
                         if passthrough_event is not None:

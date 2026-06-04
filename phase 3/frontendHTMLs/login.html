@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 - 公司知识问答系统</title>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: #f5f6fa;
+    min-height: 100vh;
+    color: #1a1a2e;
+  }
+
+  /* Not logged in: center the card */
+  #app.not-logged-in {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 440px;
+    padding: 24px;
+  }
+
+  /* ---- Card ---- */
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.06);
+    padding: 40px 36px;
+  }
+
+  .logo {
+    font-size: 28px;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 6px;
+    letter-spacing: -0.5px;
+    color: #1a1a2e;
+  }
+
+  .subtitle {
+    text-align: center;
+    color: #8e8ea0;
+    font-size: 14px;
+    margin-bottom: 32px;
+  }
+
+  /* ---- Tabs ---- */
+  .tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 28px;
+    background: #f3f4f8;
+    border-radius: 10px;
+    padding: 4px;
+  }
+  .tab {
+    flex: 1;
+    text-align: center;
+    padding: 10px 0;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    color: #6b6b80;
+    transition: all .2s;
+    border: none;
+    background: transparent;
+  }
+  .tab.active {
+    background: #fff;
+    color: #1a1a2e;
+    box-shadow: 0 1px 2px rgba(0,0,0,.06);
+  }
+
+  /* ---- Form ---- */
+  .field {
+    margin-bottom: 18px;
+  }
+  .field label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: #3a3a50;
+    margin-bottom: 6px;
+  }
+  .field input {
+    width: 100%;
+    padding: 11px 14px;
+    border: 1.5px solid #e4e6ef;
+    border-radius: 10px;
+    font-size: 14px;
+    color: #1a1a2e;
+    transition: border-color .2s;
+    outline: none;
+    background: #fafbfc;
+  }
+  .field input:focus {
+    border-color: #1a1a2e;
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(0,0,0,.08);
+  }
+  .field input::placeholder { color: #b0b0c0; }
+
+  .btn {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .btn-primary {
+    background: #1a1a2e;
+    color: #fff;
+    margin-top: 4px;
+  }
+  .btn-primary:hover { opacity: .92; transform: translateY(-1px); box-shadow: 0 4px 14px rgba(0,0,0,.15); }
+  .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 20px 0;
+    color: #c0c0d0;
+    font-size: 12px;
+  }
+  .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: #e8e9f0; }
+
+  /* ---- Session Panel ---- */
+  .user-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #f0f0f5;
+    margin-bottom: 20px;
+  }
+  .user-info { display: flex; align-items: center; gap: 10px; }
+  .avatar {
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    background: #1a1a2e;
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 600; font-size: 15px;
+  }
+  .user-name { font-weight: 600; font-size: 15px; }
+  .user-dept { font-size: 12px; color: #8e8ea0; }
+
+  .btn-sm {
+    padding: 7px 16px;
+    font-size: 13px;
+    border-radius: 8px;
+    border: 1.5px solid #e4e6ef;
+    background: #fff;
+    color: #5a5a70;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all .2s;
+  }
+  .btn-sm:hover { border-color: #1a1a2e; color: #1a1a2e; }
+  .btn-sm.danger { color: #e85d75; border-color: #fdd; }
+  .btn-sm.danger:hover { background: #fff5f5; }
+
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #8e8ea0;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    margin-bottom: 10px;
+  }
+
+  .session-list { list-style: none; }
+  .session-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all .15s;
+    margin-bottom: 4px;
+  }
+  .session-item:hover { background: #f7f8fc; }
+  .session-item.active { background: #f0f0f0; }
+  .session-name {
+    font-size: 14px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .session-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #d0d0e0;
+  }
+  .session-item.active .session-dot { background: #1a1a2e; }
+  .session-time { font-size: 12px; color: #b0b0c0; }
+
+  .btn-new-session {
+    width: 100%;
+    padding: 10px;
+    margin-top: 8px;
+    border: 2px dashed #d8dae5;
+    border-radius: 10px;
+    background: #fafbfc;
+    color: #6b6b80;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .btn-new-session:hover { border-color: #1a1a2e; color: #1a1a2e; background: #f5f5f5; }
+
+  .token-box {
+    margin-top: 16px;
+    padding: 12px 14px;
+    background: #f8f9fc;
+    border-radius: 8px;
+    font-size: 12px;
+    color: #6b6b80;
+    word-break: break-all;
+  }
+  .token-box strong { color: #3a3a50; }
+
+  .error-msg {
+    background: #fff5f5;
+    color: #e85d75;
+    font-size: 13px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+  }
+
+  .success-msg {
+    background: #f0faf5;
+    color: #2da87a;
+    font-size: 13px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+  }
+
+  /* ---- Top Nav Bar (logged-in only) ---- */
+  .top-nav {
+    background: #fff;
+    border-bottom: 1px solid #edf0f5;
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    height: 56px;
+    gap: 32px;
+  }
+  .nav-brand { font-weight: 700; font-size: 17px; color: #1a1a2e; white-space: nowrap; }
+  .nav-links { display: flex; gap: 4px; flex: 1; }
+  .nav-link {
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #6b6b80;
+    text-decoration: none;
+    transition: all .15s;
+  }
+  .nav-link:hover { background: #f5f6fa; color: #1a1a2e; }
+  .nav-link.active { background: #f0f0f0; color: #1a1a2e; }
+  .nav-user {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: #5a5a70;
+  }
+  .nav-avatar {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: #1a1a2e;
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 600;
+  }
+  .nav-logout {
+    padding: 5px 12px;
+    font-size: 12px;
+    border-radius: 6px;
+    border: 1.5px solid #fdd;
+    background: #fff;
+    color: #e85d75;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all .2s;
+  }
+  .nav-logout:hover { background: #fff5f5; }
+
+  .logged-content {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- ====== 未登录：登录/注册（居中） ====== -->
+  <div v-if="!isLoggedIn" class="container">
+    <div class="card">
+      <div class="logo">KnowledgeHub</div>
+      <div class="subtitle">公司内部知识问答系统</div>
+
+      <div class="tabs">
+        <button class="tab" :class="{ active: mode === 'login' }" @click="mode = 'login'">登录</button>
+        <button class="tab" :class="{ active: mode === 'register' }" @click="mode = 'register'">注册</button>
+      </div>
+
+      <div v-if="errorMsg" class="error-msg">{{ errorMsg }}</div>
+
+      <!-- 登录表单 -->
+      <form v-if="mode === 'login'" @submit.prevent="handleLogin">
+        <div class="field">
+          <label>邮箱</label>
+          <input v-model="loginForm.email" type="email" placeholder="输入公司邮箱" autocomplete="email" />
+        </div>
+        <div class="field">
+          <label>密码</label>
+          <input v-model="loginForm.password" type="password" placeholder="输入密码" autocomplete="current-password" />
+        </div>
+        <button class="btn btn-primary" type="submit" :disabled="loggingIn">
+          {{ loggingIn ? '登录中...' : '登 录' }}
+        </button>
+      </form>
+
+      <!-- 注册表单 -->
+      <form v-else @submit.prevent="handleRegister">
+        <div class="field">
+          <label>邮箱</label>
+          <input v-model="regForm.email" type="email" placeholder="输入公司邮箱" />
+        </div>
+        <div class="field">
+          <label>密码</label>
+          <input v-model="regForm.password" type="password" placeholder="至少8位，含大小写字母、数字、特殊字符" />
+        </div>
+        <div class="field">
+          <label>确认密码</label>
+          <input v-model="regForm.confirm" type="password" placeholder="再次输入密码" />
+        </div>
+        <div v-if="regForm.password" style="font-size:12px;color:#8e8ea0;margin-bottom:12px;">
+          <div :style="{color: pwLenOk ? '#2da87a' : '#e85d75'}">✓ 至少8个字符</div>
+          <div :style="{color: pwUpperOk ? '#2da87a' : '#e85d75'}">✓ 至少1个大写字母</div>
+          <div :style="{color: pwLowerOk ? '#2da87a' : '#e85d75'}">✓ 至少1个小写字母</div>
+          <div :style="{color: pwDigitOk ? '#2da87a' : '#e85d75'}">✓ 至少1个数字</div>
+          <div :style="{color: pwSpecialOk ? '#2da87a' : '#e85d75'}">✓ 至少1个特殊字符</div>
+        </div>
+        <button class="btn btn-primary" type="submit" :disabled="registering">
+          {{ registering ? '注册中...' : '注 册' }}
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ====== 已登录：导航 + 会话管理 ====== -->
+  <template v-else>
+    <!-- Top Navigation -->
+    <nav class="top-nav">
+      <span class="nav-brand">KnowledgeHub</span>
+      <div class="nav-links">
+        <a href="login.html" class="nav-link active">个人中心</a>
+        <a href="chat.html" class="nav-link">智能问答</a>
+        <a href="documents.html" class="nav-link">文档管理</a>
+      </div>
+      <div class="nav-user">
+        <span class="nav-avatar">{{ userInitial }}</span>
+        <span>{{ currentUser.email }}</span>
+        <button class="nav-logout" @click="handleLogout">退出</button>
+      </div>
+    </nav>
+
+    <div class="logged-content">
+      <div class="card">
+        <div class="user-bar">
+          <div class="user-info">
+            <div class="avatar">{{ userInitial }}</div>
+            <div>
+              <div class="user-name">{{ currentUser.email }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="successMsg" class="success-msg">{{ successMsg }}</div>
+        <div v-if="errorMsg" class="error-msg">{{ errorMsg }}</div>
+
+        <div class="section-title">我的会话</div>
+        <ul class="session-list">
+          <li v-for="s in sessions" :key="s.id"
+              class="session-item"
+              :class="{ active: s.id === activeSessionId }"
+              @click="switchSession(s.id)">
+            <span class="session-name">
+              <span class="session-dot"></span>
+              {{ s.name }}
+            </span>
+            <span style="display:flex;align-items:center;gap:8px;">
+              <span class="session-time">{{ s.updated_at }}</span>
+              <button class="btn-sm" style="padding:3px 10px;font-size:11px;" @click.stop="deleteSession(s.id)">删除</button>
+            </span>
+          </li>
+        </ul>
+
+        <button class="btn-new-session" @click="createSession">+ 新建会话</button>
+
+        <div class="token-box" style="margin-top:20px;">
+          <strong>Token</strong><br>
+          <span style="font-size:11px;">{{ tokenPreview }}</span><br>
+          <span style="color:#b0b0c0;">过期时间：{{ tokenExpiry }}</span>
+        </div>
+      </div>
+    </div>
+  </template>
+</div>
+
+<script>
+const { createApp, ref, computed, reactive, onMounted } = Vue;
+
+// ── API 配置 ──────────────────────────────────────────────
+const API_BASE = localStorage.getItem('api_base') || 'http://localhost:8000/api/v1';
+
+async function apiCall(path, options = {}) {
+  const headers = { ...options.headers };
+  if (!options.body || !(options.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+  }
+  const token = localStorage.getItem('auth_token') || '';
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `HTTP ${res.status}`);
+  }
+  return res;
+}
+
+createApp({
+  setup() {
+    const mode = ref('login');
+    const isLoggedIn = ref(false);
+    const loggingIn = ref(false);
+    const registering = ref(false);
+    const errorMsg = ref('');
+    const successMsg = ref('');
+
+    const loginForm = reactive({ email: '', password: '' });
+    const regForm = reactive({ email: '', password: '', confirm: '' });
+
+    const currentUser = reactive({ email: '' });
+    const tokenRef = ref('');
+    const tokenExpiry = ref('');
+    const activeSessionId = ref('');
+    const sessions = ref([]);
+
+    const userInitial = computed(() => (currentUser.email || '?')[0]?.toUpperCase() || '?');
+    const tokenPreview = computed(() => tokenRef.value ? tokenRef.value.slice(0, 40) + '...' : '—');
+
+    // 密码强度验证
+    const pwLenOk = computed(() => regForm.password.length >= 8);
+    const pwUpperOk = computed(() => /[A-Z]/.test(regForm.password));
+    const pwLowerOk = computed(() => /[a-z]/.test(regForm.password));
+    const pwDigitOk = computed(() => /[0-9]/.test(regForm.password));
+    const pwSpecialOk = computed(() => /[!@#$%^&*(),.?":{}|<>]/.test(regForm.password));
+
+    // ── 登录 ──────────────────────────────────────────────
+    async function handleLogin() {
+      errorMsg.value = '';
+      if (!loginForm.email || !loginForm.password) {
+        errorMsg.value = '请输入邮箱和密码';
+        return;
+      }
+      loggingIn.value = true;
+      try {
+        const formData = new FormData();
+        formData.append('username', loginForm.email);
+        formData.append('password', loginForm.password);
+        formData.append('grant_type', 'password');
+
+        const res = await fetch(`${API_BASE}/auth/login`, { method: 'POST', body: formData });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: '登录失败' }));
+          throw new Error(err.detail || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+
+        // 保存用户 token
+        localStorage.setItem('auth_token', data.access_token);
+        localStorage.setItem('username', loginForm.email);
+        tokenRef.value = data.access_token;
+        tokenExpiry.value = new Date(data.expires_at).toLocaleString('zh-CN');
+        currentUser.email = loginForm.email;
+
+        // 创建 session 用于聊天
+        await createSessionAfterLogin();
+
+        isLoggedIn.value = true;
+        successMsg.value = '登录成功！';
+        setTimeout(() => successMsg.value = '', 2500);
+        await loadSessions();
+      } catch (e) {
+        errorMsg.value = '登录失败: ' + e.message;
+      }
+      loggingIn.value = false;
+    }
+
+    // ── 注册 ──────────────────────────────────────────────
+    async function handleRegister() {
+      errorMsg.value = '';
+      if (!regForm.email || !regForm.password) {
+        errorMsg.value = '请填写邮箱和密码';
+        return;
+      }
+      if (regForm.password !== regForm.confirm) {
+        errorMsg.value = '两次密码不一致';
+        return;
+      }
+      if (regForm.password.length < 8) {
+        errorMsg.value = '密码至少8位';
+        return;
+      }
+      registering.value = true;
+      try {
+        const res = await fetch(`${API_BASE}/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: regForm.email, password: regForm.password }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: '注册失败' }));
+          throw new Error(err.detail || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+
+        // 保存 token 并切换到登录
+        localStorage.setItem('auth_token', data.token.access_token);
+        localStorage.setItem('username', data.email);
+        tokenRef.value = data.token.access_token;
+        tokenExpiry.value = new Date(data.token.expires_at).toLocaleString('zh-CN');
+        currentUser.email = data.email;
+
+        await createSessionAfterLogin();
+
+        isLoggedIn.value = true;
+        successMsg.value = '注册成功！';
+        setTimeout(() => successMsg.value = '', 2500);
+        await loadSessions();
+      } catch (e) {
+        errorMsg.value = '注册失败: ' + e.message;
+      }
+      registering.value = false;
+    }
+
+    // ── 登录后创建 session ───────────────────────────────
+    async function createSessionAfterLogin() {
+      try {
+        const res = await apiCall('/auth/session', { method: 'POST' });
+        const data = await res.json();
+        localStorage.setItem('session_token', data.token.access_token);
+        localStorage.setItem('session_id', data.session_id);
+        activeSessionId.value = data.session_id;
+      } catch (e) {
+        console.warn('Auto-create session failed:', e);
+      }
+    }
+
+    // ── 登出 ──────────────────────────────────────────────
+    function handleLogout() {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('session_token');
+      localStorage.removeItem('session_id');
+      localStorage.removeItem('username');
+      isLoggedIn.value = false;
+      mode.value = 'login';
+      loginForm.email = '';
+      loginForm.password = '';
+      sessions.value = [];
+    }
+
+    // ── 会话管理 ──────────────────────────────────────────
+    async function loadSessions() {
+      try {
+        const res = await apiCall('/auth/sessions');
+        const data = await res.json();
+        sessions.value = (data || []).map(s => ({
+          id: s.session_id,
+          name: s.name || s.session_id.slice(0, 8) + '...',
+          updated_at: '',
+        }));
+        if (!activeSessionId.value && sessions.value.length > 0) {
+          activeSessionId.value = sessions.value[0].id;
+          localStorage.setItem('session_id', activeSessionId.value);
+          localStorage.setItem('session_token', data[0].token.access_token);
+        }
+      } catch (e) {
+        console.warn('Load sessions failed:', e);
+      }
+    }
+
+    function switchSession(id) {
+      activeSessionId.value = id;
+      localStorage.setItem('session_id', id);
+      // 更新 session_token
+      const s = sessions.value.find(s => s.id === id);
+      if (s && s._token) localStorage.setItem('session_token', s._token);
+    }
+
+    async function createSession() {
+      try {
+        const res = await apiCall('/auth/session', { method: 'POST' });
+        const data = await res.json();
+        sessions.value.unshift({
+          id: data.session_id,
+          name: data.name || '新会话',
+          updated_at: '刚刚',
+          _token: data.token.access_token,
+        });
+        activeSessionId.value = data.session_id;
+        localStorage.setItem('session_id', data.session_id);
+        localStorage.setItem('session_token', data.token.access_token);
+      } catch (e) {
+        errorMsg.value = '创建会话失败: ' + e.message;
+      }
+    }
+
+    async function deleteSession(id) {
+      try {
+        // 需要用 session token 来删除（API 要求当前 session 匹配）
+        // 暂时用 auth token 调用，后端会处理
+        await apiCall(`/auth/session/${id}`, { method: 'DELETE' });
+      } catch (e) {
+        console.warn('Delete session failed:', e);
+      }
+      sessions.value = sessions.value.filter(s => s.id !== id);
+      if (activeSessionId.value === id && sessions.value.length > 0) {
+        activeSessionId.value = sessions.value[0].id;
+        localStorage.setItem('session_id', activeSessionId.value);
+      }
+    }
+
+    // ── 检测已登录状态 ────────────────────────────────────
+    onMounted(async () => {
+      const savedToken = localStorage.getItem('auth_token');
+      const savedUser = localStorage.getItem('username');
+      if (savedToken && savedUser) {
+        currentUser.email = savedUser;
+        tokenRef.value = savedToken;
+        isLoggedIn.value = true;
+        activeSessionId.value = localStorage.getItem('session_id') || '';
+        await loadSessions();
+      }
+    });
+
+    return {
+      mode, isLoggedIn, loggingIn, registering, errorMsg, successMsg,
+      loginForm, regForm, currentUser, tokenRef, tokenExpiry,
+      activeSessionId, sessions, userInitial, tokenPreview,
+      handleLogin, handleRegister, handleLogout,
+      switchSession, createSession, deleteSession,
+    };
+  }
+}).mount('#app');
+</script>
+</body>
+</html>

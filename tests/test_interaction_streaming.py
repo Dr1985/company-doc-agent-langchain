@@ -66,11 +66,11 @@ def load_interaction_module(monkeypatch, stream_chunks):
         def __init__(self):
             self.llm_service = FakeLLMService()
 
-        async def get_stream_response(self, messages, session_id, user_id=None):
+        async def get_stream_response(self, messages, session_id, user_id=None, document_ids=None):
             for chunk in stream_chunks:
                 yield chunk
 
-        async def get_response(self, messages, session_id, user_id=None):
+        async def get_response(self, messages, session_id, user_id=None, document_ids=None):
             return {"messages": [], "sources": []}
 
         async def clear_chat_history(self, session_id):

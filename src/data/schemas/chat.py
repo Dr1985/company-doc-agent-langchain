@@ -79,12 +79,17 @@ class ChatRequest(BaseModel):
 
     Attributes:
         messages: List of messages in the conversation.
+        document_ids: Optional list of document IDs to restrict retrieval scope.
     """
 
     messages: List[Message] = Field(
         ...,
         description="List of messages in the conversation",
         min_length=1,
+    )
+    document_ids: Optional[List[int]] = Field(
+        default=None,
+        description="Optional document IDs to restrict retrieval scope",
     )
 
 

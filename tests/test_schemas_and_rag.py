@@ -271,3 +271,47 @@ class TestSchemaExports:
     def test_chat_response_exported(self):
         from src.data.schemas import ChatResponse
         assert ChatResponse is not None
+
+
+# ── Document IDs passthrough ────────────────────────────────────────
+
+class TestChatRequestDocumentIds:
+    """4.3: ChatRequest 支持可选的 document_ids 以限定检索范围."""
+
+    def test_chat_request_without_document_ids(self):
+        from src.data.schemas.chat import ChatRequest, Message
+        req = ChatRequest(messages=[Message(role="user", content="测试")])
+        assert req.document_ids is None
+
+    def test_chat_request_with_document_ids(self):
+        from src.data.schemas.chat import ChatRequest, Message
+        req = ChatRequest(
+            messages=[Message(role="user", content="测试")],
+            document_ids=[1, 2, 3],
+        )
+        assert req.document_ids == [1, 2, 3]
+
+    def test_chat_request_with_empty_document_ids(self):
+        from src.data.schemas.chat import ChatRequest, Message
+        req = ChatRequest(
+            messages=[Message(role="user", content="测试")],
+            document_ids=[],
+        )
+        assert req.document_ids == []
+
+
+class TestGraphStateDocumentIds:
+    """4.2: GraphState 携带 document_ids 供 retrieve 节点使用."""
+
+    def test_graph_state_with_document_ids(self):
+        from src.data.schemas.graph import GraphState
+        state = GraphState(
+            messages=[],
+            document_ids=[10, 20],
+        )
+        assert state.document_ids == [10, 20]
+
+    def test_graph_state_without_document_ids_is_none(self):
+        from src.data.schemas.graph import GraphState
+        state = GraphState(messages=[])
+        assert state.document_ids is None
