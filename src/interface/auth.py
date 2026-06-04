@@ -44,10 +44,16 @@ from src.utils.sanitization import (
     sanitize_string,
     validate_password_strength,
 )
+from src.utils.session_names import resolve_session_name
 
 router = APIRouter()
 security = HTTPBearer()
 db_service = DatabaseService()
+
+
+def _get_session_response_name(session: Session) -> str:
+    """Return a stable display name for a session response."""
+    return resolve_session_name(session.name, session.created_at)
 
 
 async def get_current_user(
@@ -272,7 +278,7 @@ async def create_session(user: User = Depends(get_current_user)):
             expires_at=token.expires_at.isoformat(),
         )
 
-        return SessionResponse(session_id=session_id, name=session.name, token=token)
+        return SessionResponse(session_id=session_id, name=_get_session_response_name(session), token=token)
     except ValueError as ve:
         logger.error("session_creation_validation_failed", error=str(ve), user_id=user.id, exc_info=True)
         raise HTTPException(status_code=422, detail=str(ve))
@@ -308,7 +314,7 @@ async def update_session_name(
         # Create a new token (not strictly necessary but maintains consistency)
         token = create_access_token(sanitized_session_id)
 
-        return SessionResponse(session_id=sanitized_session_id, name=session.name, token=token)
+        return SessionResponse(session_id=sanitized_session_id, name=_get_session_response_name(session), token=token)
     except ValueError as ve:
         logger.error("session_update_validation_failed", error=str(ve), session_id=session_id, exc_info=True)
         raise HTTPException(status_code=422, detail=str(ve))
@@ -358,7 +364,7 @@ async def get_user_sessions(user: User = Depends(get_current_user)):
         return [
             SessionResponse(
                 session_id=sanitize_string(session.id),
-                name=sanitize_string(session.name),
+                name=_get_session_response_name(session),
                 token=create_access_token(session.id),
             )
             for session in sessions

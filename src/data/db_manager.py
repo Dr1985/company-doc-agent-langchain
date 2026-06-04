@@ -27,6 +27,7 @@ from src.data.models.document import (
 )
 from src.data.models.session import Session as ChatSession
 from src.data.models.user import User
+from src.utils.session_names import resolve_session_name
 
 
 class DatabaseService:
@@ -154,12 +155,13 @@ class DatabaseService:
         Returns:
             ChatSession: The created session
         """
+        resolved_name = resolve_session_name(name)
         with Session(self.engine) as session:
-            chat_session = ChatSession(id=session_id, user_id=user_id, name=name)
+            chat_session = ChatSession(id=session_id, user_id=user_id, name=resolved_name)
             session.add(chat_session)
             session.commit()
             session.refresh(chat_session)
-            logger.info("session_created", session_id=session_id, user_id=user_id, name=name)
+            logger.info("session_created", session_id=session_id, user_id=user_id, name=resolved_name)
             return chat_session
 
     async def delete_session(self, session_id: str) -> bool:
