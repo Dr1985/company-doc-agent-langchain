@@ -13,6 +13,8 @@ ENV_KEYS = [
     "LLM_PROVIDER",
     "OPENAI_API_KEY",
     "OPENAI_BASE_URL",
+    "OPENROUTER_API_KEY",
+    "OPENROUTER_BASE_URL",
     "DEEPSEEK_API_KEY",
     "DEEPSEEK_BASE_URL",
     "DEFAULT_LLM_MODEL",
@@ -86,6 +88,29 @@ def test_auto_selects_deepseek_when_only_deepseek_key_exists(monkeypatch):
     assert "embedder" in settings.LONG_TERM_MEMORY_DISABLED_REASON
 
 
+def test_auto_selects_openrouter_when_only_openrouter_key_exists(monkeypatch):
+    settings_module, provider_module = load_settings_and_provider(
+        monkeypatch,
+        APP_ENV="test",
+        OPENROUTER_API_KEY="openrouter-test-key",
+        OPENAI_API_KEY=None,
+        DEEPSEEK_API_KEY=None,
+    )
+
+    settings = settings_module.settings
+
+    assert settings.ACTIVE_LLM_PROVIDER == settings_module.LLMProvider.OPENROUTER
+    assert settings.DEFAULT_LLM_MODEL == "nvidia/nemotron-3-super-120b-a12b:free"
+    assert provider_module.LLMRegistry.get_all_names() == [
+        "nvidia/nemotron-3-super-120b-a12b:free",
+        "openai/gpt-oss-120b:free",
+        "z-ai/glm-4.5-air:free",
+    ]
+    assert settings.EVALUATION_BASE_URL == settings.OPENROUTER_BASE_URL
+    assert settings.LONG_TERM_MEMORY_AVAILABLE is False
+    assert "embedder" in settings.LONG_TERM_MEMORY_DISABLED_REASON
+
+
 def test_auto_prefers_openai_when_both_provider_keys_exist(monkeypatch):
     settings_module, provider_module = load_settings_and_provider(
         monkeypatch,
@@ -101,6 +126,28 @@ def test_auto_prefers_openai_when_both_provider_keys_exist(monkeypatch):
     assert settings.DEFAULT_LLM_MODEL == "gpt-5-mini"
     assert model_names[0] == "gpt-5-mini"
     assert "deepseek-chat" in model_names
+
+
+def test_default_model_infers_openrouter_when_multiple_provider_keys_exist(monkeypatch):
+    settings_module, provider_module = load_settings_and_provider(
+        monkeypatch,
+        APP_ENV="test",
+        OPENAI_API_KEY="openai-test-key",
+        OPENROUTER_API_KEY="openrouter-test-key",
+        DEFAULT_LLM_MODEL="openai/gpt-oss-120b:free",
+    )
+
+    settings = settings_module.settings
+    model_names = provider_module.LLMRegistry.get_all_names()
+
+    assert settings.ACTIVE_LLM_PROVIDER == settings_module.LLMProvider.OPENROUTER
+    assert settings.DEFAULT_LLM_MODEL == "openai/gpt-oss-120b:free"
+    assert model_names[:3] == [
+        "nvidia/nemotron-3-super-120b-a12b:free",
+        "openai/gpt-oss-120b:free",
+        "z-ai/glm-4.5-air:free",
+    ]
+    assert "gpt-5-mini" in model_names
 
 
 def test_explicit_deepseek_provider_uses_openai_embedder_when_available(monkeypatch):
@@ -120,6 +167,29 @@ def test_explicit_deepseek_provider_uses_openai_embedder_when_available(monkeypa
     assert settings.LONG_TERM_MEMORY_AVAILABLE is True
     assert settings.get_long_term_memory_llm_config()["deepseek_base_url"] == settings.DEEPSEEK_BASE_URL
     assert settings.get_long_term_memory_embedder_config()["openai_base_url"] == settings.OPENAI_BASE_URL
+
+
+def test_openrouter_long_term_memory_uses_openai_compatible_provider_config(monkeypatch):
+    settings_module, _ = load_settings_and_provider(
+        monkeypatch,
+        APP_ENV="test",
+        LLM_PROVIDER="openrouter",
+        OPENROUTER_API_KEY="openrouter-test-key",
+        LONG_TERM_MEMORY_EMBEDDER_PROVIDER="openai",
+        LONG_TERM_MEMORY_EMBEDDER_API_KEY="embedder-test-key",
+        LONG_TERM_MEMORY_EMBEDDER_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        LONG_TERM_MEMORY_EMBEDDER_MODEL="text-embedding-v4",
+        LONG_TERM_MEMORY_EMBEDDER_DIMS="1024",
+    )
+
+    settings = settings_module.settings
+    llm_config = settings.get_long_term_memory_llm_config()
+
+    assert settings.LONG_TERM_MEMORY_PROVIDER == settings_module.LLMProvider.OPENROUTER
+    assert settings.LONG_TERM_MEMORY_AVAILABLE is True
+    assert settings.get_long_term_memory_llm_provider_name() == "openai"
+    assert llm_config["model"] == "nvidia/nemotron-3-super-120b-a12b:free"
+    assert llm_config["openai_base_url"] == settings.OPENROUTER_BASE_URL
 
 
 def test_alibaba_embedding_config_can_use_openai_compatible_embedder(monkeypatch):

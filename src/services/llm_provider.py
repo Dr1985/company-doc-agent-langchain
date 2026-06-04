@@ -142,6 +142,35 @@ class LLMRegistry:
                     },
                 }
             ],
+            LLMProvider.OPENROUTER: [
+                {
+                    "name": "nvidia/nemotron-3-super-120b-a12b:free",
+                    "provider": LLMProvider.OPENROUTER,
+                    "kwargs": {
+                        "temperature": settings.DEFAULT_LLM_TEMPERATURE,
+                        "max_tokens": settings.MAX_TOKENS,
+                        "top_p": 0.9 if settings.ENVIRONMENT == Environment.PRODUCTION else 0.8,
+                    },
+                },
+                {
+                    "name": "openai/gpt-oss-120b:free",
+                    "provider": LLMProvider.OPENROUTER,
+                    "kwargs": {
+                        "temperature": settings.DEFAULT_LLM_TEMPERATURE,
+                        "max_tokens": settings.MAX_TOKENS,
+                        "top_p": 0.9 if settings.ENVIRONMENT == Environment.PRODUCTION else 0.8,
+                    },
+                },
+                {
+                    "name": "z-ai/glm-4.5-air:free",
+                    "provider": LLMProvider.OPENROUTER,
+                    "kwargs": {
+                        "temperature": settings.DEFAULT_LLM_TEMPERATURE,
+                        "max_tokens": settings.MAX_TOKENS,
+                        "top_p": 0.9 if settings.ENVIRONMENT == Environment.PRODUCTION else 0.8,
+                    },
+                },
+            ],
         }
 
     @classmethod

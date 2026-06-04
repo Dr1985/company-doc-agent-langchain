@@ -91,7 +91,7 @@ class LangGraphAgent:
                 "config": settings.get_long_term_memory_vector_store_config(),
             },
             "llm": {
-                "provider": settings.LONG_TERM_MEMORY_PROVIDER.value,
+                "provider": settings.get_long_term_memory_llm_provider_name(),
                 "config": settings.get_long_term_memory_llm_config(),
             },
             "embedder": {

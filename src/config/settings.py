@@ -39,6 +39,7 @@ class LLMProvider(str, Enum):
 
     AUTO = "auto"
     OPENAI = "openai"
+    OPENROUTER = "openrouter"
     DEEPSEEK = "deepseek"
 
 
@@ -170,10 +171,12 @@ class Settings:
             return LLMProvider.AUTO
         if normalized == LLMProvider.OPENAI.value:
             return LLMProvider.OPENAI
+        if normalized == LLMProvider.OPENROUTER.value:
+            return LLMProvider.OPENROUTER
         if normalized == LLMProvider.DEEPSEEK.value:
             return LLMProvider.DEEPSEEK
 
-        allowed_values = [LLMProvider.OPENAI.value, LLMProvider.DEEPSEEK.value]
+        allowed_values = [LLMProvider.OPENAI.value, LLMProvider.OPENROUTER.value, LLMProvider.DEEPSEEK.value]
         if allow_auto:
             allowed_values.insert(0, LLMProvider.AUTO.value)
         raise ValueError(f"unsupported llm provider '{provider}'. expected one of: {', '.join(allowed_values)}")
@@ -185,15 +188,24 @@ class Settings:
         if not normalized:
             return None
 
+        if "/" in normalized:
+            return LLMProvider.OPENROUTER
         if normalized.startswith("deepseek-"):
             return LLMProvider.DEEPSEEK
         if normalized.startswith(("gpt-", "o1", "o3", "o4")):
             return LLMProvider.OPENAI
         return None
 
+    @staticmethod
+    def _provider_preference_order() -> List[LLMProvider]:
+        """Return the default provider priority used in auto mode."""
+        return [LLMProvider.OPENAI, LLMProvider.OPENROUTER, LLMProvider.DEEPSEEK]
+
     def get_llm_api_key(self, provider: Union[str, LLMProvider]) -> str:
         """Get the API key for a provider."""
         provider = self._normalize_provider(provider)
+        if provider == LLMProvider.OPENROUTER:
+            return self.OPENROUTER_API_KEY
         if provider == LLMProvider.DEEPSEEK:
             return self.DEEPSEEK_API_KEY
         return self.OPENAI_API_KEY
@@ -201,6 +213,8 @@ class Settings:
     def get_llm_base_url(self, provider: Union[str, LLMProvider]) -> str:
         """Get the base URL for a provider."""
         provider = self._normalize_provider(provider)
+        if provider == LLMProvider.OPENROUTER:
+            return self.OPENROUTER_BASE_URL
         if provider == LLMProvider.DEEPSEEK:
             return self.DEEPSEEK_BASE_URL
         return self.OPENAI_BASE_URL
@@ -222,20 +236,19 @@ class Settings:
         if inferred_provider and self.get_llm_api_key(inferred_provider):
             return inferred_provider
 
-        if self.OPENAI_API_KEY and not self.DEEPSEEK_API_KEY:
-            return LLMProvider.OPENAI
-        if self.DEEPSEEK_API_KEY and not self.OPENAI_API_KEY:
-            return LLMProvider.DEEPSEEK
-        if self.OPENAI_API_KEY:
-            return LLMProvider.OPENAI
-        if self.DEEPSEEK_API_KEY:
-            return LLMProvider.DEEPSEEK
+        configured_providers = [
+            provider
+            for provider in self._provider_preference_order()
+            if self.get_llm_api_key(provider)
+        ]
+        if configured_providers:
+            return configured_providers[0]
         return LLMProvider.OPENAI
 
     def _get_available_llm_providers(self) -> List[LLMProvider]:
         """Get the providers with configured API keys."""
         providers: List[LLMProvider] = []
-        for provider in (LLMProvider.OPENAI, LLMProvider.DEEPSEEK):
+        for provider in self._provider_preference_order():
             if self.get_llm_api_key(provider):
                 providers.append(provider)
         return providers
@@ -335,6 +348,12 @@ class Settings:
 
         return config
 
+    def get_long_term_memory_llm_provider_name(self) -> str:
+        """Return the mem0-compatible provider name for long-term memory."""
+        if self.LONG_TERM_MEMORY_PROVIDER == LLMProvider.DEEPSEEK:
+            return LLMProvider.DEEPSEEK.value
+        return LLMProvider.OPENAI.value
+
     def get_long_term_memory_embedder_config(self) -> Dict[str, Any]:
         """Build the mem0 embedder configuration."""
         config: Dict[str, Any] = {
@@ -396,6 +415,8 @@ class Settings:
         # LangGraph Configuration
         self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
         self.OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip()
+        self.OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
+        self.OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").strip()
         self.DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
         self.DEEPSEEK_BASE_URL = os.getenv(
             "DEEPSEEK_BASE_URL",
@@ -410,6 +431,7 @@ class Settings:
             "DEFAULT_LLM_MODEL",
             {
                 LLMProvider.OPENAI: "gpt-5-mini",
+                LLMProvider.OPENROUTER: "nvidia/nemotron-3-super-120b-a12b:free",
                 LLMProvider.DEEPSEEK: "deepseek-chat",
             },
         )
@@ -424,6 +446,7 @@ class Settings:
             "LONG_TERM_MEMORY_MODEL",
             {
                 LLMProvider.OPENAI: "gpt-5-nano",
+                LLMProvider.OPENROUTER: "nvidia/nemotron-3-super-120b-a12b:free",
                 LLMProvider.DEEPSEEK: "deepseek-chat",
             },
             provider=self.LONG_TERM_MEMORY_PROVIDER,
@@ -513,6 +536,7 @@ class Settings:
             "EVALUATION_LLM",
             {
                 LLMProvider.OPENAI: "gpt-5",
+                LLMProvider.OPENROUTER: "nvidia/nemotron-3-super-120b-a12b:free",
                 LLMProvider.DEEPSEEK: "deepseek-chat",
             },
         )
