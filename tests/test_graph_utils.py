@@ -82,3 +82,38 @@ def test_prepare_messages_accepts_langchain_human_message(monkeypatch):
     assert prepared_messages[1].content == "你好，你是谁？"
 
 
+def test_prepare_messages_accepts_system_prompt_longer_than_api_message_limit(monkeypatch):
+    graph_module = load_graph_module(monkeypatch)
+    monkeypatch.setattr(graph_module.settings, "MAX_TOKENS", 4000)
+
+    long_system_prompt = "系统提示词" * 800  # 4000 chars, longer than API Message max_length=3000
+    prepared_messages = graph_module.prepare_messages(
+        messages=[Message(role="user", content="公司的离职流程是什么？")],
+        llm=DeepSeekLikeLLM(),
+        system_prompt=long_system_prompt,
+    )
+
+    assert [message.role for message in prepared_messages] == ["system", "user"]
+    assert prepared_messages[0].content == long_system_prompt
+    assert prepared_messages[1].content == "公司的离职流程是什么？"
+
+
+def test_prepare_messages_truncates_system_prompt_to_preserve_latest_user_message(monkeypatch):
+    graph_module = load_graph_module(monkeypatch)
+    monkeypatch.setattr(graph_module.settings, "MAX_TOKENS", 50)
+
+    latest_user_message = "离职流程是什么？"
+    long_system_prompt = "S" * 2000
+    prepared_messages = graph_module.prepare_messages(
+        messages=[Message(role="user", content=latest_user_message)],
+        llm=DeepSeekLikeLLM(),
+        system_prompt=long_system_prompt,
+    )
+
+    assert [message.role for message in prepared_messages] == ["system", "user"]
+    assert prepared_messages[1].content == latest_user_message
+    assert prepared_messages[0].content != long_system_prompt
+    assert "system prompt truncated to fit token budget" in prepared_messages[0].content
+    assert graph_module._estimate_message_tokens(prepared_messages) <= graph_module.settings.MAX_TOKENS
+
+

@@ -1,25 +1,48 @@
 """This file contains the graph utilities for the application."""
 
-from typing import Optional
+from dataclasses import dataclass
+from typing import Literal, Optional
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.messages import BaseMessage
 
 from src.config.settings import settings
-from src.system.logs import logger
 from src.data.schemas import Message
+from src.system.logs import logger
 
 
-def dump_messages(messages: list[Message]) -> list[dict]:
+_SYSTEM_PROMPT_TRUNCATION_MARKER = "\n\n[... system prompt truncated to fit token budget ...]\n\n"
+
+
+@dataclass(slots=True)
+class PreparedMessage:
+    """Internal message representation for LLM calls.
+
+    Unlike the API-facing ``Message`` schema, this internal structure does not
+    enforce the request validation length cap, which allows large system prompts
+    and retrieved context to be prepared safely before they are trimmed to the
+    token budget.
+    """
+
+    role: Literal["user", "assistant", "system"]
+    content: str
+
+
+def dump_messages(messages: list[object]) -> list[dict[str, str]]:
     """Dump the messages to a list of dictionaries.
 
     Args:
-        messages (list[Message]): The messages to dump.
+        messages (list[object]): The messages to dump.
 
     Returns:
         list[dict]: The dumped messages.
     """
-    return [message.model_dump() for message in messages]
+    dumped_messages: list[dict[str, str]] = []
+    for message in messages:
+        if (normalized_message := _normalize_message(message)) is None:
+            continue
+        dumped_messages.append({"role": normalized_message.role, "content": normalized_message.content})
+    return dumped_messages
 
 
 def process_llm_response(response: BaseMessage) -> BaseMessage:
@@ -93,18 +116,15 @@ def _message_content_to_text(content: object) -> str:
     return str(content)
 
 
-def _estimate_message_tokens(messages: list[dict | Message | BaseMessage]) -> int:
+def _estimate_message_tokens(messages: list[object]) -> int:
     """Estimate the number of tokens in a message list.
 
     This is a conservative fallback used when the underlying model does not
     implement native token counting (for example, DeepSeek via ChatOpenAI).
     """
     total_tokens = 0
-    for message in messages:
-        if isinstance(message, dict):
-            content = message.get("content", "")
-        else:
-            content = getattr(message, "content", "")
+    for message in dump_messages(messages):
+        content = message.get("content", "")
 
         text = _message_content_to_text(content).strip()
         if not text:
@@ -116,29 +136,57 @@ def _estimate_message_tokens(messages: list[dict | Message | BaseMessage]) -> in
     return max(total_tokens, len(messages))
 
 
-def _normalize_message(message: object) -> Optional[Message]:
-    """Convert an incoming message object into the local Message schema."""
-    if isinstance(message, Message):
-        return message
-
-    if isinstance(message, dict):
-        role = str(message.get("role") or message.get("type") or "").lower()
-        content = message.get("content", "")
-    else:
-        role = str(getattr(message, "role", None) or getattr(message, "type", "")).lower()
-        content = getattr(message, "content", "")
-
-    if role in {"human", "user"}:
-        return Message(role="user", content=_message_content_to_text(content))
-    if role in {"ai", "assistant"}:
-        return Message(role="assistant", content=_message_content_to_text(content))
-    if role == "system":
-        return Message(role="system", content=_message_content_to_text(content))
-
+def _normalize_role(role: object) -> Optional[Literal["user", "assistant", "system"]]:
+    """Normalize supported message roles to OpenAI-style role names."""
+    role_value = str(role or "").lower()
+    if role_value in {"human", "user"}:
+        return "user"
+    if role_value in {"ai", "assistant"}:
+        return "assistant"
+    if role_value == "system":
+        return "system"
     return None
 
 
-def _trim_message_history(messages: list[object], system_prompt: str) -> list[Message]:
+def _truncate_text_to_token_budget(text: str, token_budget: int) -> str:
+    """Truncate text to the approximate token budget used by the fallback estimator."""
+    effective_token_budget = max(token_budget - 4, 1)
+    char_budget = effective_token_budget * 4
+    if len(text) <= char_budget:
+        return text
+
+    if char_budget <= len(_SYSTEM_PROMPT_TRUNCATION_MARKER):
+        return text[:char_budget]
+
+    remaining_chars = char_budget - len(_SYSTEM_PROMPT_TRUNCATION_MARKER)
+    head_chars = max(remaining_chars // 2, 1)
+    tail_chars = max(remaining_chars - head_chars, 1)
+    return f"{text[:head_chars]}{_SYSTEM_PROMPT_TRUNCATION_MARKER}{text[-tail_chars:]}"
+
+
+def _normalize_message(message: object) -> Optional[PreparedMessage]:
+    """Convert an incoming message object into the local Message schema."""
+    if isinstance(message, PreparedMessage):
+        return message
+
+    if isinstance(message, Message):
+        return PreparedMessage(role=message.role, content=message.content)
+
+    if isinstance(message, dict):
+        role = message.get("role") or message.get("type")
+        content = message.get("content", "")
+    else:
+        role = getattr(message, "role", None) or getattr(message, "type", "")
+        content = getattr(message, "content", "")
+
+    normalized_role = _normalize_role(role)
+    if normalized_role is None:
+        return None
+
+    return PreparedMessage(role=normalized_role, content=_message_content_to_text(content))
+
+
+def _trim_message_history(messages: list[object], system_prompt: str) -> list[PreparedMessage]:
     """Trim the message history while preserving the latest user-aligned context."""
     normalized_messages = [
         normalized_message
@@ -146,20 +194,35 @@ def _trim_message_history(messages: list[object], system_prompt: str) -> list[Me
         if (normalized_message := _normalize_message(message)) is not None and normalized_message.role != "system"
     ]
 
-    prepared_messages = [Message(role="system", content=system_prompt), *normalized_messages]
+    prepared_messages = [PreparedMessage(role="system", content=system_prompt), *normalized_messages]
 
-    while len(prepared_messages) > 1 and _estimate_message_tokens(dump_messages(prepared_messages)) > settings.MAX_TOKENS:
+    while len(prepared_messages) > 2 and _estimate_message_tokens(prepared_messages) > settings.MAX_TOKENS:
         # Always trim from the oldest non-system message first.
         prepared_messages.pop(1)
 
         # Preserve the "start_on=human" behavior by removing any leading assistant message.
-        while len(prepared_messages) > 1 and prepared_messages[1].role != "user":
+        while len(prepared_messages) > 2 and prepared_messages[1].role != "user":
             prepared_messages.pop(1)
+
+    if prepared_messages and _estimate_message_tokens(prepared_messages) > settings.MAX_TOKENS:
+        non_system_token_count = _estimate_message_tokens(prepared_messages[1:])
+        truncated_system_prompt = _truncate_text_to_token_budget(
+            prepared_messages[0].content,
+            settings.MAX_TOKENS - non_system_token_count,
+        )
+        if truncated_system_prompt != prepared_messages[0].content:
+            logger.info(
+                "system_prompt_truncated_to_budget",
+                original_length=len(prepared_messages[0].content),
+                truncated_length=len(truncated_system_prompt),
+                max_tokens=settings.MAX_TOKENS,
+            )
+            prepared_messages[0] = PreparedMessage(role="system", content=truncated_system_prompt)
 
     return prepared_messages
 
 
-def prepare_messages(messages: list[object], llm: BaseChatModel, system_prompt: str) -> list[Message]:
+def prepare_messages(messages: list[object], llm: BaseChatModel, system_prompt: str) -> list[PreparedMessage]:
     """Prepare the messages for the LLM.
 
     Args:
@@ -168,6 +231,6 @@ def prepare_messages(messages: list[object], llm: BaseChatModel, system_prompt: 
         system_prompt (str): The system prompt to use.
 
     Returns:
-        list[Message]: The prepared messages.
+        list[PreparedMessage]: The prepared messages.
     """
     return _trim_message_history(messages, system_prompt)
