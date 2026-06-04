@@ -1,3 +1,4 @@
+import asyncio
 import importlib
 import sys
 import types
@@ -45,6 +46,47 @@ def reset_modules():
         sys.modules.pop(module_name, None)
 
 
+def test_fastapi_entrypoint_sets_selector_event_loop_policy_on_windows(monkeypatch):
+    for key in ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **kw: None)
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("LLM_PROVIDER", "auto")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-test-key")
+    monkeypatch.setenv("LONG_TERM_MEMORY_ENABLED", "false")
+
+    fake_db_module = types.ModuleType("src.data.db_manager")
+
+    class DatabaseService:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class FakeDBManager:
+        async def health_check(self):
+            return True
+
+    fake_db_module.DatabaseService = DatabaseService
+    fake_db_module.db_manager = FakeDBManager()
+
+    selector_policy_calls = []
+
+    class FakeWindowsSelectorEventLoopPolicy:
+        pass
+
+    monkeypatch.setattr(sys, "platform", "win32", raising=False)
+    monkeypatch.setattr(asyncio, "WindowsSelectorEventLoopPolicy", FakeWindowsSelectorEventLoopPolicy, raising=False)
+    monkeypatch.setattr(asyncio, "set_event_loop_policy", lambda policy: selector_policy_calls.append(policy))
+
+    reset_modules()
+    monkeypatch.setitem(sys.modules, "src.data.db_manager", fake_db_module)
+
+    importlib.import_module("src.main")
+
+    assert len(selector_policy_calls) == 1
+    assert isinstance(selector_policy_calls[0], FakeWindowsSelectorEventLoopPolicy)
+
+
 def test_fastapi_entrypoint_imports_with_stubbed_database(monkeypatch):
     for key in ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
@@ -78,4 +120,62 @@ def test_fastapi_entrypoint_imports_with_stubbed_database(monkeypatch):
     assert main_module.app.title == "FastAPI LangGraph Template"
     assert any(route.path == "/" for route in main_module.app.routes)
     assert any(route.path.endswith("/health") for route in main_module.app.routes)
+
+
+def test_fastapi_entrypoint_run_uses_embedded_uvicorn_launcher(monkeypatch):
+    for key in ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **kw: None)
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("LLM_PROVIDER", "auto")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-test-key")
+    monkeypatch.setenv("LONG_TERM_MEMORY_ENABLED", "false")
+    monkeypatch.setenv("UVICORN_HOST", "127.0.0.1")
+    monkeypatch.setenv("UVICORN_PORT", "8012")
+    monkeypatch.setenv("UVICORN_RELOAD", "true")
+
+    fake_db_module = types.ModuleType("src.data.db_manager")
+
+    class DatabaseService:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class FakeDBManager:
+        async def health_check(self):
+            return True
+
+    fake_db_module.DatabaseService = DatabaseService
+    fake_db_module.db_manager = FakeDBManager()
+
+    uvicorn_calls = []
+    fake_uvicorn = types.ModuleType("uvicorn")
+
+    def fake_run(app, host, port, reload, log_level):
+        uvicorn_calls.append(
+            {
+                "app": app,
+                "host": host,
+                "port": port,
+                "reload": reload,
+                "log_level": log_level,
+            }
+        )
+
+    fake_uvicorn.run = fake_run
+
+    reset_modules()
+    monkeypatch.setitem(sys.modules, "src.data.db_manager", fake_db_module)
+    monkeypatch.setitem(sys.modules, "uvicorn", fake_uvicorn)
+
+    main_module = importlib.import_module("src.main")
+    main_module.run()
+
+    assert len(uvicorn_calls) == 1
+    assert uvicorn_calls[0]["app"] is main_module.app
+    assert uvicorn_calls[0]["host"] == "127.0.0.1"
+    assert uvicorn_calls[0]["port"] == 8012
+    assert uvicorn_calls[0]["reload"] is True
+    assert uvicorn_calls[0]["log_level"] == "debug"
+
 

@@ -1,5 +1,8 @@
 """This file contains the main application entry point."""
 
+import asyncio
+import os
+import sys
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import (
@@ -37,6 +40,15 @@ from src.system.tracing import (
     shutdown_langfuse,
 )
 from src.data.db_manager import db_manager
+
+
+def _configure_windows_event_loop_policy() -> None:
+    """Use the selector event loop on Windows for psycopg async compatibility."""
+    if sys.platform.startswith("win") and hasattr(asyncio, "WindowsSelectorEventLoopPolicy"):
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
+_configure_windows_event_loop_policy()
 
 
 @asynccontextmanager
@@ -212,3 +224,25 @@ async def health_check(request: Request) -> Dict[str, Any]:
 frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
 if frontend_dir.is_dir():
     app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
+
+
+def run() -> None:
+    """Run the application with uvicorn using this module's startup configuration."""
+    import uvicorn
+
+    host = os.getenv("UVICORN_HOST", "127.0.0.1").strip() or "127.0.0.1"
+    port = int(os.getenv("UVICORN_PORT", "8000"))
+    reload_enabled = os.getenv("UVICORN_RELOAD", "").strip().lower() in {"1", "true", "yes", "on"}
+
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        reload=reload_enabled,
+        log_level=settings.LOG_LEVEL.lower(),
+    )
+
+
+if __name__ == "__main__":
+    run()
+
