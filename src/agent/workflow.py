@@ -44,7 +44,7 @@ from src.system.tracing import (
     start_trace_span,
     update_current_span,
 )
-from src.agent.prompts import load_system_prompt
+from src.agent.prompts import load_system_prompt, load_rag_system_prompt
 from src.data.schemas import (
     GraphState,
     Message,
@@ -55,6 +55,7 @@ from src.utils import (
     prepare_messages,
     process_llm_response,
 )
+from src.retrieval.hybrid import rag_retrieve
 
 
 class LangGraphAgent:
@@ -240,6 +241,66 @@ class LangGraphAgent:
                     error=str(e),
                 )
 
+    async def _retrieve(self, state: GraphState, config: RunnableConfig) -> Command:
+        """Retrieve relevant document chunks for the user query.
+
+        Runs hybrid search (vector + BM25) and parent document recall,
+        then updates the state with formatted context and citation sources.
+        """
+        # Extract the last user message as the search query
+        last_user_msg = ""
+        for msg in reversed(state.messages):
+            if hasattr(msg, "type") and msg.type == "human":
+                last_user_msg = msg.content
+                break
+            elif isinstance(msg, dict) and msg.get("role") == "user":
+                last_user_msg = msg.get("content", "")
+                break
+
+        if not last_user_msg:
+            logger.warning("retrieve_no_user_message")
+            return Command(update={"retrieved_context": "", "sources": []}, goto="chat")
+
+        with start_trace_span(
+            "retrieve",
+            input={"query": last_user_msg[:200]},
+            metadata={"query_length": len(last_user_msg)},
+        ):
+            try:
+                result = await rag_retrieve(
+                    query=last_user_msg,
+                    top_k=5,
+                    include_parent_docs=True,
+                )
+                update_current_span(output={
+                    "chunk_count": len(result["chunks"]),
+                    "parent_count": len(result["parent_chunks"]),
+                    "has_context": bool(result["context"]),
+                })
+
+                logger.info(
+                    "retrieve_completed",
+                    query_length=len(last_user_msg),
+                    chunks=len(result["chunks"]),
+                    sources=len(result["sources"]),
+                )
+
+                return Command(
+                    update={
+                        "retrieved_context": result["context"],
+                        "sources": result["sources"],
+                    },
+                    goto="chat",
+                )
+            except Exception as e:
+                logger.error("retrieve_failed", error=str(e))
+                update_current_span(level="ERROR", status_message=str(e))
+                # Degrade gracefully: continue without context
+                return Command(
+                    update={"retrieved_context": "", "sources": []},
+                    goto="chat",
+                )
+
     async def _chat(self, state: GraphState, config: RunnableConfig) -> Command:
         """Process the chat state and generate a response.
 
@@ -257,7 +318,14 @@ class LangGraphAgent:
             else settings.DEFAULT_LLM_MODEL
         )
 
-        SYSTEM_PROMPT = load_system_prompt(long_term_memory=state.long_term_memory)
+        # Use RAG prompt when retrieved context is available, otherwise default
+        if state.retrieved_context:
+            SYSTEM_PROMPT = load_rag_system_prompt(
+                long_term_memory=state.long_term_memory,
+                retrieved_context=state.retrieved_context,
+            )
+        else:
+            SYSTEM_PROMPT = load_system_prompt(long_term_memory=state.long_term_memory)
 
         # Prepare messages with system prompt
         messages = prepare_messages(state.messages, current_llm, SYSTEM_PROMPT)
@@ -356,9 +424,10 @@ class LangGraphAgent:
         if self._graph is None:
             try:
                 graph_builder = StateGraph(GraphState)
+                graph_builder.add_node("retrieve", self._retrieve, ends=["chat"])
                 graph_builder.add_node("chat", self._chat, ends=["tool_call", END])
                 graph_builder.add_node("tool_call", self._tool_call, ends=["chat"])
-                graph_builder.set_entry_point("chat")
+                graph_builder.set_entry_point("retrieve")
                 graph_builder.set_finish_point("chat")
 
                 # Get connection pool (may be None in production if DB unavailable)
@@ -397,7 +466,7 @@ class LangGraphAgent:
         messages: list[Message],
         session_id: str,
         user_id: Optional[str] = None,
-    ) -> list[dict]:
+    ) -> dict:
         """Get a response from the LLM.
 
         Args:
@@ -406,7 +475,7 @@ class LangGraphAgent:
             user_id (Optional[str]): The user ID for Langfuse tracking.
 
         Returns:
-            list[dict]: The response from the LLM.
+            dict: {"messages": [...], "sources": [...]}
         """
         if self._graph is None:
             self._graph = await self.create_graph()
@@ -459,8 +528,9 @@ class LangGraphAgent:
                     )
                 )
                 processed_messages = self.__process_messages(response["messages"])
-                update_current_span(output={"response_message_count": len(processed_messages)})
-                return processed_messages
+                sources = response.get("sources", [])
+                update_current_span(output={"response_message_count": len(processed_messages), "source_count": len(sources)})
+                return {"messages": processed_messages, "sources": sources}
             except Exception as e:
                 update_current_span(level="ERROR", status_message=str(e))
                 logger.exception("Error getting response", session_id=session_id, error=str(e))
@@ -530,8 +600,9 @@ class LangGraphAgent:
                         # Continue with next token even if current one fails
                         continue
 
-                # After streaming completes, get final state and update memory in background
+                # After streaming completes, get final state
                 state: StateSnapshot = await sync_to_async(self._graph.get_state)(config=config)
+                sources = []
                 if state.values and "messages" in state.values:
                     memory_update_trace_context = capture_current_trace_context()
                     asyncio.create_task(
@@ -542,8 +613,13 @@ class LangGraphAgent:
                             trace_context=memory_update_trace_context,
                         )
                     )
+                    sources = state.values.get("sources", [])
 
-                update_current_span(output={"response_length": len(full_response)})
+                # Yield sources as a special event
+                import json as _json
+                yield f"data: {_json.dumps({'type': 'sources', 'sources': sources})}\n\n"
+
+                update_current_span(output={"response_length": len(full_response), "source_count": len(sources)})
             except Exception as stream_error:
                 update_current_span(level="ERROR", status_message=str(stream_error))
                 logger.error("Error in stream processing", error=str(stream_error), session_id=session_id)

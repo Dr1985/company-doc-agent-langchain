@@ -2,8 +2,11 @@
 
 import re
 from typing import (
+    Any,
+    Dict,
     List,
     Literal,
+    Optional,
 )
 
 from pydantic import (
@@ -11,6 +14,26 @@ from pydantic import (
     Field,
     field_validator,
 )
+
+
+class SourceCitation(BaseModel):
+    """Citation source from a retrieved document chunk.
+
+    Attributes:
+        chunk_id: ID of the chunk.
+        document_id: ID of the parent document.
+        filename: Original document filename.
+        chunk_index: Index of the chunk within the document.
+        score: Similarity / relevance score.
+        preview: First portion of the chunk content.
+    """
+
+    chunk_id: int
+    document_id: int
+    filename: str = ""
+    chunk_index: int = 0
+    score: float = 0.0
+    preview: str = ""
 
 
 class Message(BaseModel):
@@ -70,9 +93,11 @@ class ChatResponse(BaseModel):
 
     Attributes:
         messages: List of messages in the conversation.
+        sources: Citation sources from retrieved documents.
     """
 
     messages: List[Message] = Field(..., description="List of messages in the conversation")
+    sources: List[SourceCitation] = Field(default_factory=list, description="Citation sources")
 
 
 class StreamResponse(BaseModel):

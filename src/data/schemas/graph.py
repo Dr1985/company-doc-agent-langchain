@@ -1,6 +1,6 @@
 """This file contains the graph schema for the application."""
 
-from typing import Annotated
+from typing import Annotated, Any, Dict, List, Optional
 
 from langgraph.graph.message import add_messages
 from pydantic import (
@@ -16,3 +16,5 @@ class GraphState(BaseModel):
         default_factory=list, description="The messages in the conversation"
     )
     long_term_memory: str = Field(default="", description="The long term memory of the conversation")
+    retrieved_context: str = Field(default="", description="Formatted RAG context for the LLM")
+    sources: List[Dict[str, Any]] = Field(default_factory=list, description="Citation sources for RAG responses")

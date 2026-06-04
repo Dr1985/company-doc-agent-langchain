@@ -5,6 +5,7 @@ from src.data.schemas.chat import (
     ChatRequest,
     ChatResponse,
     Message,
+    SourceCitation,
     StreamResponse,
 )
 from src.data.schemas.graph import GraphState
@@ -14,6 +15,7 @@ __all__ = [
     "ChatRequest",
     "ChatResponse",
     "Message",
+    "SourceCitation",
     "StreamResponse",
     "GraphState",
 ]

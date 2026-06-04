@@ -31,6 +31,7 @@ from src.data.schemas.chat import (
     ChatRequest,
     ChatResponse,
     Message,
+    SourceCitation,
     StreamResponse,
 )
 
@@ -93,12 +94,26 @@ async def chat(
 
         result = await agent.get_response(chat_request.messages, session.id, user_id=session.user_id)
 
-        if result:
-            update_current_trace(output={"assistant_message": result[-1].content})
+        messages = result.get("messages", [])
+        sources = result.get("sources", [])
+        source_citations = [
+            SourceCitation(
+                chunk_id=s.get("chunk_id", 0),
+                document_id=s.get("document_id", 0),
+                filename=s.get("filename", ""),
+                chunk_index=s.get("chunk_index", 0),
+                score=s.get("score", 0.0),
+                preview=s.get("preview", ""),
+            )
+            for s in sources
+        ]
+
+        if messages:
+            update_current_trace(output={"assistant_message": messages[-1].content if messages else ""})
 
         logger.info("chat_request_processed", session_id=session.id)
 
-        return ChatResponse(messages=result)
+        return ChatResponse(messages=messages, sources=source_citations)
     except Exception as e:
         logger.error("chat_request_failed", session_id=session.id, error=str(e), exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
