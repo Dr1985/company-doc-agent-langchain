@@ -1,8 +1,8 @@
 # 公司内部文档整理与问答智能体 — 设计方案
 
-> **版本**: v0.2  
+> **版本**: v0.3  
 > **状态**: Phase 3 开发中  
-> **最后更新**: 2026-06-03
+> **最后更新**: 2026-06-04
 
 ---
 
@@ -466,3 +466,47 @@ company-agent/
 | **Phase 6: 管理与优化** | 管理后台（文档/用户管理+数据看板）、知识图谱、性能优化、A/B 测试；**先做 Vue 3 管理后台 / 数据看板 / 知识图谱页原型，确认后再做后端 API** | 可运营的完整系统 | 📋 规划中 |
 
 ---
+
+### 9.1 Phase 3 ~ Phase 6 详细拆解
+
+> 说明：下面的页面建议先按 **Vue 3 单页中的独立区块** 做原型，确认交互后再拆成独立路由；阶段原则仍然是 **先页面原型，后后端 API**。
+
+#### Phase 3：基础问答
+
+| 优先级 | 先做的 Vue 页面 | 对应后端 API | 验收标准 |
+|---|---|---|---|
+| P0 | 登录 / 会话页 | `POST /auth/login`、`POST /auth/session`、`GET /auth/sessions` | 能登录并获取用户 token；能创建 / 切换会话；页面可展示 token、过期时间和当前 session。 |
+| P0 | 问答页（聊天框 + 引用来源 + 历史区） | `GET /documents/documents`、`GET /documents/documents/{doc_id}`、`POST /documents/retrieve`、`POST /chatbot/chat`、`POST /chatbot/chat/stream`、`GET /chatbot/messages`、`DELETE /chatbot/messages` | 能完成“检索 → 生成 → 引用来源”的完整闭环；支持同步 / 流式回答、历史查看和清空会话。 |
+| P1 | 文档选择侧栏 / 结果预览区 | `GET /documents/documents/{doc_id}` | 能查看文档状态、chunk 数和更新时间；未就绪文档不可被选中参与检索。 |
+
+#### Phase 4：多模型路由与热点缓存
+
+| 优先级 | 先做的 Vue 页面 | 对应后端 API | 验收标准 |
+|---|---|---|---|
+| P0 | 模型路由配置页 | （规划）`GET /llm/providers`、`GET /llm/routes`、`PUT /llm/routes/current`、`POST /llm/routes/preview` | 能查看当前模型、路由规则和 fallback 顺序；切换策略后能按配置生效；预览结果与实际路由一致。 |
+| P0 | 热点问答缓存页 | （规划）`GET /cache/qa/stats`、`GET /cache/qa/items`、`POST /cache/qa/invalidate` | 能看到缓存命中率、热门问题、TTL 与失效状态；文档更新后能主动失效关联缓存。 |
+| P1 | 路由对比 / 预览页 | （规划）`POST /llm/routes/preview`、`POST /chatbot/chat`、`POST /chatbot/chat/stream` | 同一问题可预览不同模型输出；简单 / 复杂 / 敏感问题的路由结果符合预期；时间敏感问题可绕过缓存。 |
+
+#### Phase 5：高级功能
+
+| 优先级 | 先做的 Vue 页面 | 对应后端 API | 验收标准 |
+|---|---|---|---|
+| P0 | 文档管理页（上传 / 列表 / 状态） | `POST /documents/upload`、`GET /documents/documents`、`GET /documents/documents/{doc_id}`、`DELETE /documents/documents/{doc_id}` | 文档能上传、进入处理队列、显示处理状态并最终变为 ready / failed；删除后列表和详情同步消失。 |
+| P0 | 文档详情页（摘要 / 相关文档 / 来源定位） | （规划）`POST /documents/{doc_id}/summarize`、`GET /documents/{doc_id}/summary`、`GET /documents/{doc_id}/similar` | 能查看一句话 / 段落 / 详细摘要；能展示相关文档推荐；能从摘要或来源跳回原文位置。 |
+| P1 | 分类 / 标签纠偏页 | （规划）`POST /documents/{doc_id}/classify`、`PUT /documents/{doc_id}/tags`、`PUT /documents/{doc_id}/category` | 管理员可修正分类与标签；修正结果可持久化；后续检索与列表展示能使用最新标注。 |
+| P1 | 权限管理页（RBAC） | （规划）`GET /rbac/roles`、`POST /rbac/roles`、`PUT /rbac/users/{user_id}/roles`、`GET /rbac/documents/{doc_id}/permissions` | 可按部门 / 角色配置访问范围；未授权用户无法检索或查看受限文档。 |
+| P2 | OCR / 表格抽取页（文档详情 Tabs） | （规划）`POST /documents/{doc_id}/ocr`、`GET /documents/{doc_id}/ocr-result`、`POST /documents/{doc_id}/tables/extract` | 扫描件可识别文字；表格可结构化展示；识别失败时可返回明确错误原因。 |
+| P2 | 多轮对话增强页（会话详情） | `GET /chatbot/messages`、`POST /chatbot/chat`、`POST /chatbot/chat/stream` | 追问能继承上下文；历史消息可回看；长对话不会丢失关键引用与来源信息。 |
+
+#### Phase 6：管理与优化
+
+| 优先级 | 先做的 Vue 页面 | 对应后端 API | 验收标准 |
+|---|---|---|---|
+| P0 | 管理后台首页 / 数据看板 | （规划）`GET /admin/overview`、`GET /admin/metrics`、`GET /admin/dashboard` | 能展示文档量、问答量、活跃用户、错误率、延迟、缓存命中率等核心指标。 |
+| P0 | 用户 / 文档管理页 | （规划）`GET /admin/users`、`POST /admin/users`、`PATCH /admin/users/{id}`、`GET /admin/documents` | 管理员可增删改查用户和文档；修改后的权限和状态可立即生效。 |
+| P1 | 审计日志页 | （规划）`GET /admin/audit/logs`、`GET /admin/audit/events` | 查询和文档访问记录可按用户、时间、文档过滤；关键操作可追溯。 |
+| P1 | 知识图谱页 | （规划）`GET /knowledge-graph/entities`、`GET /knowledge-graph/relations`、`POST /knowledge-graph/query` | 能按实体 / 关系 / 路径查询并可视化展示图谱；查询结果可导出或继续钻取。 |
+| P2 | A/B 测试页 | （规划）`POST /experiments`、`GET /experiments`、`GET /experiments/{id}`、`GET /experiments/{id}/compare` | 能创建和对比不同检索 / 提示词 / 模型策略；可输出对比结论并支持复盘。 |
+
+---
+
